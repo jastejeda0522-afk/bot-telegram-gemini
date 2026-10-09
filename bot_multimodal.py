@@ -30,10 +30,10 @@ def run_http_server():
     httpd.serve_forever()
 
 def auto_ping_loop():
-    """Realiza un autod disparo HTTP a la URL pública de Render cada 10 min."""
+    """Realiza un disparo HTTP a la URL pública de Render cada 10 min."""
     render_url = os.environ.get("RENDER_EXTERNAL_URL")
     if not render_url:
-        print("Aviso: RENDER_EXTERNAL_URL no esta definida. Auto-ping desactivado.")
+        print("Aviso: RENDER_EXTERNAL_URL no está definida. Auto-ping desactivado.")
         return
 
     print(f"Iniciando Auto-Ping hacia: {render_url}")
@@ -41,9 +41,9 @@ def auto_ping_loop():
         time.sleep(600)  # Esperar 10 minutos (600 segundos)
         try:
             res = requests.get(render_url, timeout=10)
-            print(f"[Auto-Ping] Peticion enviada a {render_url} - Status Code: {res.status_code}")
+            print(f"[Auto-Ping] Petición enviada a {render_url} - Status Code: {res.status_code}")
         except Exception as e:
-            print(f"[Auto-Ping Error] Fallo al enviar peticion: {str(e)}")
+            print(f"[Auto-Ping Error] Falló al enviar petición: {str(e)}")
 
 # Iniciar servidor HTTP en segundo plano
 http_thread = threading.Thread(target=run_http_server, daemon=True)
@@ -92,7 +92,7 @@ def call_groq_text(messages_payload):
             return response.choices[0].message.content
         except Exception as e:
             last_exception = e
-            print(f"Advertencia: Modelo {model_name} fallo: {str(e)}")
+            print(f"Advertencia: Modelo {model_name} falló: {str(e)}")
     raise last_exception
 
 def call_groq_vision(prompt_text, image_url):
@@ -116,7 +116,7 @@ def call_groq_vision(prompt_text, image_url):
             return response.choices[0].message.content
         except Exception as e:
             last_exception = e
-            print(f"Advertencia: Modelo de visión {model_name} fallo: {str(e)}")
+            print(f"Advertencia: Modelo de visión {model_name} falló: {str(e)}")
     raise last_exception
 
 # ---------------------------------------------------------
@@ -173,7 +173,12 @@ def handle_photo(message):
         chat_histories[chat_id].append({"role": "assistant", "content": answer})
         chat_histories[chat_id] = chat_histories[chat_id][-14:]
 
-        bot.reply_to(message, answer, parse_mode="Markdown", reply_markup=get_control_keyboard())
+        # Intento de envío con parse_mode="Markdown", respaldo sin formato ante error de sintaxis
+        try:
+            bot.reply_to(message, answer, parse_mode="Markdown", reply_markup=get_control_keyboard())
+        except Exception:
+            bot.reply_to(message, answer, reply_markup=get_control_keyboard())
+
     except Exception as e:
         bot.reply_to(message, f"Ocurrió un error al procesar la imagen: {str(e)}")
 
@@ -201,7 +206,12 @@ def handle_text(message):
         chat_histories[chat_id].append({"role": "assistant", "content": answer})
         chat_histories[chat_id] = chat_histories[chat_id][-14:]
 
-        bot.reply_to(message, answer, parse_mode="Markdown", reply_markup=get_control_keyboard())
+        # Intento de envío con parse_mode="Markdown", respaldo sin formato ante error de sintaxis
+        try:
+            bot.reply_to(message, answer, parse_mode="Markdown", reply_markup=get_control_keyboard())
+        except Exception:
+            bot.reply_to(message, answer, reply_markup=get_control_keyboard())
+
     except Exception as e:
         bot.reply_to(message, f"Ocurrió un error al procesar la solicitud: {str(e)}")
 
@@ -211,4 +221,4 @@ def handle_text(message):
 if __name__ == '__main__':
     print("Bot iniciando en Telegram...")
     bot.infinity_polling(timeout=20, long_polling_timeout=10)
-        
+    
