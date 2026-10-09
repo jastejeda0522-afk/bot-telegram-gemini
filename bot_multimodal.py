@@ -28,6 +28,12 @@ TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 client = genai.Client(api_key=GEMINI_API_KEY)
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
+# Función auxiliar para enviar mensajes largos dividiéndolos en partes
+def send_long_message(message_obj, text):
+    max_length = 4000
+    for i in range(0, len(text), max_length):
+        bot.reply_to(message_obj, text[i:i + max_length])
+
 # Función auxiliar para llamar a Gemini con reintentos si ocurre un error 503
 def generate_with_retry(contents):
     max_retries = 3
@@ -40,7 +46,7 @@ def generate_with_retry(contents):
             return response.text
         except Exception as e:
             if "503" in str(e) and attempt < max_retries - 1:
-                time.sleep(2)  # Espera 2 segundos antes de reintentar
+                time.sleep(2)
                 continue
             raise e
 
@@ -49,7 +55,7 @@ def generate_with_retry(contents):
 def handle_text(message):
     try:
         text_response = generate_with_retry(message.text)
-        bot.reply_to(message, text_response)
+        send_long_message(message, text_response)
     except Exception as e:
         bot.reply_to(message, f"Ocurrió un error al procesar el texto: {e}")
 
@@ -67,10 +73,11 @@ def handle_photo(message):
         ]
         
         text_response = generate_with_retry(contents)
-        bot.reply_to(message, text_response)
+        send_long_message(message, text_response)
     except Exception as e:
         bot.reply_to(message, f"Ocurrió un error al procesar la imagen: {e}")
 
 # 4. Iniciar el bot
 if __name__ == "__main__":
     bot.infinity_polling()
+    
