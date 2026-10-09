@@ -45,18 +45,19 @@ if not TELEGRAM_TOKEN or not GROQ_API_KEY:
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 groq_client = Groq(api_key=GROQ_API_KEY)
 
-# Modelos OFICIALES ACTIVOS en Groq (Texto)
+# Lista de modelos de texto soportados en Groq
 TEXT_MODELS = [
-    "openai/gpt-oss-20b",
-    "openai/gpt-oss-120b"
+    "llama-3.1-8b-instant",
+    "llama-3.3-70b-versatile"
 ]
 
-# Modelo OFICIAL ACTIVO para Visión (Imágenes)
+# Lista de modelos de visión soportados en Groq
 VISION_MODELS = [
-    "qwen/qwen3.8-27b"
+    "llama-3.2-11b-vision-preview",
+    "llama-3.2-90b-vision-preview"
 ]
 
-# Almacenamiento de memoria conversacional (máximo 14 mensajes por usuario)
+# Memoria conversacional por chat (hasta 14 mensajes)
 chat_histories = {}
 
 SYSTEM_PROMPT = (
@@ -67,7 +68,6 @@ SYSTEM_PROMPT = (
     "- Utiliza símbolos Unicode claros para matemáticas (ejemplos: x², √x, a / b, π, ±, ∫, ×, ÷, ∞)."
 )
 
-# Función con Fallback automático para consultas de texto
 def call_groq_text(messages_payload):
     last_exception = None
     for model_name in TEXT_MODELS:
@@ -81,10 +81,9 @@ def call_groq_text(messages_payload):
             return response.choices[0].message.content
         except Exception as e:
             last_exception = e
-            print(f"Advertencia: Modelo {model_name} fallo. Detalle: {str(e)}")
+            print(f"Error con modelo {model_name}: {str(e)}")
     raise last_exception
 
-# Función con Fallback automático para imágenes (Visión)
 def call_groq_vision(prompt_text, image_url):
     last_exception = None
     for model_name in VISION_MODELS:
@@ -106,11 +105,11 @@ def call_groq_vision(prompt_text, image_url):
             return response.choices[0].message.content
         except Exception as e:
             last_exception = e
-            print(f"Advertencia: Modelo de visión {model_name} fallo. Detalle: {str(e)}")
+            print(f"Error con modelo de visión {model_name}: {str(e)}")
     raise last_exception
 
 # ---------------------------------------------------------
-# 3. Teclado Interactivo de Control de Memoria
+# 3. Teclado Interactivo de Memoria
 # ---------------------------------------------------------
 def get_control_keyboard():
     keyboard = types.InlineKeyboardMarkup(row_width=2)
@@ -130,7 +129,7 @@ def send_welcome(message):
         "• 💬 **Consultas de texto:** Pregúntame lo que necesites.\n"
         "• 🖼️ **Análisis de imágenes:** Envíame una foto para analizarla.\n"
         "• 🎨 **Generación de imágenes:** Pídeme cosas como *'Dibuja un gato'*.\n\n"
-        "Usa los botones al final de los mensajes para administrar la memoria de la conversación."
+        "Usa los botones al final de los mensajes para administrar la memoria."
     )
     bot.reply_to(message, welcome_text, parse_mode="Markdown", reply_markup=get_control_keyboard())
 
@@ -158,7 +157,6 @@ def handle_photo(message):
 
         answer = call_groq_vision(user_prompt, file_url)
 
-        # Guardar en contexto
         if chat_id not in chat_histories:
             chat_histories[chat_id] = []
         chat_histories[chat_id].append({"role": "user", "content": f"[Foto enviada] {user_prompt}"})
@@ -170,7 +168,7 @@ def handle_photo(message):
         bot.reply_to(message, f"Ocurrió un error al procesar la imagen: {str(e)}")
 
 # ---------------------------------------------------------
-# 6. Manejador de Texto (Chat y Generación de Imágenes)
+# 6. Manejador de Texto y Generación de Imágenes
 # ---------------------------------------------------------
 @bot.message_handler(func=lambda message: True, content_types=['text'])
 def handle_text(message):
@@ -203,7 +201,7 @@ def handle_text(message):
             bot.reply_to(message, f"Ocurrió un error al generar la imagen: {str(e)}")
         return
 
-    # Caso 2: Conversación estándar con Groq
+    # Caso 2: Conversación con Groq
     bot.send_chat_action(chat_id, 'typing')
     
     if chat_id not in chat_histories:
@@ -230,4 +228,4 @@ def handle_text(message):
 if __name__ == '__main__':
     print("Bot iniciando en Telegram...")
     bot.infinity_polling(timeout=20, long_polling_timeout=10)
-        
+    
