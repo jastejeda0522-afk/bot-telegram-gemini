@@ -4,6 +4,7 @@ import http.server
 import socketserver
 import threading
 from google import genai
+from google.genai import types
 import telebot
 
 # 1. Servidor HTTP en segundo plano para Render
@@ -28,7 +29,7 @@ TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 client = genai.Client(api_key=GEMINI_API_KEY)
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
-# Función auxiliar para enviar mensajes largos sin error de Telegram
+# Función auxiliar para dividir mensajes largos
 def send_long_message(message_obj, text):
     max_length = 4000
     for i in range(0, len(text), max_length):
@@ -67,10 +68,13 @@ def handle_photo(message):
         
         caption = message.caption if message.caption else "Describe esta imagen"
         
-        contents = [
-            {"mime_type": "image/jpeg", "data": downloaded_file},
-            caption
-        ]
+        # Enviar la imagen formateada con Part.from_bytes
+        image_part = types.Part.from_bytes(
+            data=downloaded_file,
+            mime_type="image/jpeg"
+        )
+        
+        contents = [image_part, caption]
         
         text_response = generate_with_retry(contents)
         send_long_message(message, text_response)
