@@ -6,7 +6,7 @@ import telebot
 from groq import Groq
 
 # ---------------------------------------------------------
-# 1. Servidor HTTP básico para Render (evita que el servicio se caiga)
+# 1. Servidor HTTP básico para Render
 # ---------------------------------------------------------
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -22,12 +22,12 @@ def run_http_server():
     print(f"Servidor HTTP escuchando en el puerto {port}...")
     httpd.serve_forever()
 
-# Iniciar el servidor HTTP en un hilo secundario
+# Iniciar servidor en hilo secundario
 http_thread = threading.Thread(target=run_http_server, daemon=True)
 http_thread.start()
 
 # ---------------------------------------------------------
-# 2. Configuración de credenciales y modelos
+# 2. Configuración y Clientes
 # ---------------------------------------------------------
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
@@ -38,22 +38,19 @@ if not TELEGRAM_TOKEN or not GROQ_API_KEY:
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 groq_client = Groq(api_key=GROQ_API_KEY)
 
-# Modelos recomendados de Groq
-MODEL_TEXTO = "llama-3.1-8b-instant"
-MODEL_VISION = "llama-3.2-11b-vision-preview"
+# Modelos oficiales activos en Groq
+MODEL_TEXTO = "openai/gpt-oss-20b"
+MODEL_VISION = "openai/gpt-oss-120b"
 
-# Prompt base para mantener la empatía y personalidad estructurada
 SYSTEM_PROMPT = (
     "Eres un asistente virtual extremadamente empático, claro, servicial y técnico cuando se requiere. "
-    "Responde de manera bien estructurada, en formato markdown si es oportuno, utilizando viñetas y "
-    "un lenguaje claro y amigable en español."
+    "Responde de manera bien estructurada, en formato markdown utilizando viñetas y un lenguaje claro y amigable en español."
 )
 
 # ---------------------------------------------------------
-# 3. Manejadores de eventos de Telegram
+# 3. Manejadores de Telegram
 # ---------------------------------------------------------
 
-# Manejador de comando /start
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     welcome_text = (
@@ -61,23 +58,17 @@ def send_welcome(message):
         "Estoy listo para ayudarte con lo que necesites:\n"
         "• 💬 **Consultas y dudas:** Pregúntame lo que quieras.\n"
         "• 🖼️ **Análisis de imágenes:** Envíame una foto y te la describiré o analizaré.\n"
-        "• 🎨 **Generación de imágenes:** Pídeme algo como *'Dibuja un gato astronauta'* "
-        "o *'Genera una imagen de...'*\n\n"
+        "• 🎨 **Generación de imágenes:** Pídeme algo como *'Dibuja un gato astronauta'*\n\n"
         "¿En qué puedo ayudarte hoy?"
     )
     bot.reply_to(message, welcome_text, parse_mode="Markdown")
 
-# Manejador de fotos (Visión)
 @bot.message_handler(content_types=['photo'])
 def handle_photo(message):
     try:
         bot.send_chat_action(message.chat.id, 'typing')
-        
-        # Obtener la foto de mayor resolución
         file_info = bot.get_file(message.photo[-1].file_id)
         file_url = f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_info.file_path}"
-        
-        # Texto/Pregunta del usuario con la foto (si envió)
         user_prompt = message.caption if message.caption else "Describe esta imagen con detalle."
 
         response = groq_client.chat.completions.create(
@@ -94,19 +85,14 @@ def handle_photo(message):
             temperature=0.7,
             max_tokens=1024,
         )
-        
         bot.reply_to(message, response.choices[0].message.content, parse_mode="Markdown")
-
     except Exception as e:
         bot.reply_to(message, f"Ocurrió un error al procesar la imagen: {str(e)}")
 
-# Manejador de texto (Chat y Generación de Imágenes)
 @bot.message_handler(func=lambda message: True)
 def handle_text(message):
     text = message.text.strip()
     text_lower = text.lower()
-
-    # Palabras clave para detectar si el usuario quiere GENERAR una imagen
     keywords_imagen = ["dibuja", "dibujar", "genera una imagen", "crea una imagen", "haz una imagen", "generate image", "draw"]
 
     if any(kw in text_lower for kw in keywords_imagen):
@@ -126,7 +112,6 @@ def handle_text(message):
     else:
         try:
             bot.send_chat_action(message.chat.id, 'typing')
-            
             response = groq_client.chat.completions.create(
                 model=MODEL_TEXTO,
                 messages=[
@@ -136,16 +121,14 @@ def handle_text(message):
                 temperature=0.7,
                 max_tokens=2048,
             )
-            
             bot.reply_to(message, response.choices[0].message.content, parse_mode="Markdown")
-
         except Exception as e:
             bot.reply_to(message, f"Ocurrió un error al procesar la solicitud: {str(e)}")
 
 # ---------------------------------------------------------
-# 4. Iniciar el bot en modo polling
+# 4. Iniciar Polling
 # ---------------------------------------------------------
 if __name__ == '__main__':
     print("Bot iniciando en Telegram...")
     bot.infinity_polling()
-    
+        
