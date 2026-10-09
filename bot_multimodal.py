@@ -40,8 +40,12 @@ if not TELEGRAM_TOKEN or not GROQ_API_KEY:
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 groq_client = Groq(api_key=GROQ_API_KEY)
 
-# Modelos para la API de Groq
-MODEL_TEXTO = "llama3-8b-8192"
+# Lista de modelos de texto en orden de preferencia (Fallback automático)
+TEXT_MODELS = [
+    "llama-3.1-8b-instant",
+    "llama-3.3-70b-versatile",
+    "meta-llama/llama-4-scout-17b-16e-instruct"
+]
 MODEL_VISION = "meta-llama/llama-4-scout-17b-16e-instruct"
 
 # Almacenamiento de contexto (hasta 14 mensajes por chat_id)
@@ -54,6 +58,23 @@ SYSTEM_PROMPT = (
     "- NO utilices sintaxis LaTeX como $, $$, \\frac, \\begin, \\end.\n"
     "- Utiliza símbolos Unicode claros para matemáticas (ejemplos: x², √x, a / b, π, ±, ∫, ×, ÷, ∞)."
 )
+
+# Función auxiliar para llamar a Groq con manejo inteligente de modelos
+def call_groq_text(messages_payload):
+    last_exception = None
+    for model_name in TEXT_MODELS:
+        try:
+            response = groq_client.chat.completions.create(
+                model=model_name,
+                messages=messages_payload,
+                temperature=0.7,
+                max_tokens=2048,
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            last_exception = e
+            print(f"Error con modelo {model_name}: {str(e)}. Intentando siguiente...")
+    raise last_exception
 
 # ---------------------------------------------------------
 # 3. Teclado Interactivo de Memoria Conversacional
@@ -163,7 +184,7 @@ def handle_text(message):
             bot.reply_to(message, f"Ocurrió un error al generar la imagen: {str(e)}")
         return
 
-    # Caso 2: Conversación general con memoria usando Groq
+    # Caso 2: Conversación general con memoria usando Groq y Fallback
     bot.send_chat_action(chat_id, 'typing')
     
     if chat_id not in chat_histories:
@@ -175,13 +196,7 @@ def handle_text(message):
     payload = [{"role": "system", "content": SYSTEM_PROMPT}] + chat_histories[chat_id]
 
     try:
-        response = groq_client.chat.completions.create(
-            model=MODEL_TEXTO,
-            messages=payload,
-            temperature=0.7,
-            max_tokens=2048,
-        )
-        answer = response.choices[0].message.content
+        answer = call_groq_text(payload)
         
         chat_histories[chat_id].append({"role": "assistant", "content": answer})
         chat_histories[chat_id] = chat_histories[chat_id][-14:]
