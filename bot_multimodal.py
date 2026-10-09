@@ -37,7 +37,7 @@ def auto_ping_loop():
 
     print(f"Iniciando Auto-Ping hacia: {render_url}")
     while True:
-        time.sleep(600)  # Esperar 10 minutos (600 segundos)
+        time.sleep(600)  # Esperar 10 minutos
         try:
             res = requests.get(render_url, timeout=10)
             print(f"[Auto-Ping] Petición enviada a {render_url} - Status Code: {res.status_code}")
@@ -77,9 +77,33 @@ SYSTEM_PROMPT = (
     "- Detecta cuando el usuario quiera cambiar drásticamente de tema o conversación y adáptate naturalmente a la nueva temática.\n\n"
     "REGLAS DE FORMATO Y MATEMÁTICAS:\n"
     "- Responde de manera bien estructurada en formato Markdown amigable en español.\n"
+    "- Sé conciso y directo al punto en tus explicaciones.\n"
     "- NO utilices sintaxis LaTeX como $, $$, \\frac, \\begin, \\end.\n"
     "- Utiliza símbolos Unicode claros para matemáticas (ejemplos: x², √x, a / b, π, ±, ∫, ×, ÷, ∞)."
 )
+
+def send_split_message(message, text):
+    """Maneja el límite de 4096 caracteres de Telegram dividiendo la respuesta si es necesario."""
+    max_length = 4000
+    if len(text) <= max_length:
+        try:
+            bot.reply_to(message, text, parse_mode="Markdown")
+        except Exception:
+            bot.reply_to(message, text)
+    else:
+        # Dividir texto por fragmentos de máximo 4000 caracteres
+        chunks = [text[i:i + max_length] for i in range(0, len(text), max_length)]
+        for index, chunk in enumerate(chunks):
+            try:
+                if index == 0:
+                    bot.reply_to(message, chunk, parse_mode="Markdown")
+                else:
+                    bot.send_message(message.chat.id, chunk, parse_mode="Markdown")
+            except Exception:
+                if index == 0:
+                    bot.reply_to(message, chunk)
+                else:
+                    bot.send_message(message.chat.id, chunk)
 
 def call_groq_text(messages_payload):
     last_exception = None
@@ -89,7 +113,7 @@ def call_groq_text(messages_payload):
                 model=model_name,
                 messages=messages_payload,
                 temperature=0.7,
-                max_tokens=2048,
+                max_tokens=1500,
             )
             return response.choices[0].message.content
         except Exception as e:
@@ -160,10 +184,7 @@ def process_photo_async(message):
         chat_histories[chat_id].append({"role": "assistant", "content": answer})
         chat_histories[chat_id] = chat_histories[chat_id][-14:]
 
-        try:
-            bot.reply_to(message, answer, parse_mode="Markdown")
-        except Exception:
-            bot.reply_to(message, answer)
+        send_split_message(message, answer)
 
     except Exception as e:
         bot.reply_to(message, f"Ocurrió un error al procesar la imagen: {str(e)}")
@@ -196,10 +217,7 @@ def handle_text(message):
         chat_histories[chat_id].append({"role": "assistant", "content": answer})
         chat_histories[chat_id] = chat_histories[chat_id][-14:]
 
-        try:
-            bot.reply_to(message, answer, parse_mode="Markdown")
-        except Exception:
-            bot.reply_to(message, answer)
+        send_split_message(message, answer)
 
     except Exception as e:
         bot.reply_to(message, f"Ocurrió un error al procesar la solicitud: {str(e)}")
