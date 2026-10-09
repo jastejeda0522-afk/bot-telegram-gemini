@@ -4,7 +4,6 @@ import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import requests
 import telebot
-from telebot import types
 from groq import Groq
 
 # ---------------------------------------------------------
@@ -74,7 +73,8 @@ chat_histories = {}
 SYSTEM_PROMPT = (
     "Eres un asistente virtual empático, claro, servicial y técnico cuando se requiere.\n\n"
     "CAPACIDADES:\n"
-    "- Tienes la capacidad de analizar imágenes y fotos. Si el usuario te menciona que te enviará una foto o imagen, indícale amablemente que estás listo para recibirla y analizarla.\n\n"
+    "- Tienes la capacidad de analizar imágenes y fotos. Si el usuario te menciona que te enviará una foto o imagen, indícale amablemente que estás listo para recibirla y analizarla.\n"
+    "- Detecta cuando el usuario quiera cambiar drásticamente de tema o conversación y adáptate naturalmente a la nueva temática.\n\n"
     "REGLAS DE FORMATO Y MATEMÁTICAS:\n"
     "- Responde de manera bien estructurada en formato Markdown amigable en español.\n"
     "- NO utilices sintaxis LaTeX como $, $$, \\frac, \\begin, \\end.\n"
@@ -122,17 +122,7 @@ def call_groq_vision(prompt_text, image_url):
     raise last_exception
 
 # ---------------------------------------------------------
-# 3. Teclado Interactivo
-# ---------------------------------------------------------
-def get_control_keyboard():
-    keyboard = types.InlineKeyboardMarkup(row_width=2)
-    btn_continue = types.InlineKeyboardButton("💬 Continuar Tema", callback_data="topic_continue")
-    btn_reset = types.InlineKeyboardButton("🔄 Nuevo Tema", callback_data="topic_reset")
-    keyboard.add(btn_continue, btn_reset)
-    return keyboard
-
-# ---------------------------------------------------------
-# 4. Manejadores de Comandos y Callbacks
+# 3. Manejadores de Comandos
 # ---------------------------------------------------------
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
@@ -140,32 +130,27 @@ def send_welcome(message):
         "¡Hola! 👋 Soy tu asistente virtual.\n\n"
         "Puedo ayudarte con:\n"
         "• 💬 **Consultas de texto:** Pregúntame lo que necesites.\n"
-        "• 🖼️ **Análisis de imágenes:** Envíame una foto para analizarla.\n\n"
-        "Usa los botones al final de los mensajes para administrar la memoria."
+        "• 🖼️ **Análisis de imágenes:** Envíame una foto para analizarla.\n"
+        "• 🔄 **Nuevo tema:** Usa el comando /reset para reiniciar la memoria de la conversación."
     )
-    bot.reply_to(message, welcome_text, parse_mode="Markdown", reply_markup=get_control_keyboard())
+    bot.reply_to(message, welcome_text, parse_mode="Markdown")
 
-@bot.callback_query_handler(func=lambda call: call.data in ["topic_continue", "topic_reset"])
-def handle_topic_buttons(call):
-    chat_id = call.message.chat.id
-    if call.data == "topic_reset":
-        chat_histories[chat_id] = []
-        bot.answer_callback_query(call.id, "Contexto reiniciado")
-        bot.send_message(chat_id, "🔄 **Tema reiniciado.** ¿En qué te puedo ayudar ahora?", parse_mode="Markdown")
-    elif call.data == "topic_continue":
-        bot.answer_callback_query(call.id, "Continuando el tema actual")
+@bot.message_handler(commands=['reset', 'nuevotema'])
+def reset_conversation(message):
+    chat_id = message.chat.id
+    chat_histories[chat_id] = []
+    bot.reply_to(message, "🔄 **Tema reiniciado.** ¿En qué te puedo ayudar ahora?", parse_mode="Markdown")
 
 # ---------------------------------------------------------
-# 5. Manejador de Fotos Recibidas (Visión)
+# 4. Manejador de Fotos Recibidas (Visión Asíncrona)
 # ---------------------------------------------------------
-@bot.message_handler(content_types=['photo'])
-def handle_photo(message):
+def process_photo_async(message):
     chat_id = message.chat.id
     try:
         bot.send_chat_action(chat_id, 'typing')
         file_info = bot.get_file(message.photo[-1].file_id)
         file_url = f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_info.file_path}"
-        user_prompt = message.caption if message.caption else "Describe esta imagen con detalle."
+        user_prompt = message.caption if message.caption else "Describe esta imagen con detalle y resuelve el ejercicio si hay uno."
 
         answer = call_groq_vision(user_prompt, file_url)
 
@@ -175,17 +160,20 @@ def handle_photo(message):
         chat_histories[chat_id].append({"role": "assistant", "content": answer})
         chat_histories[chat_id] = chat_histories[chat_id][-14:]
 
-        # Intento de envío con parse_mode="Markdown", respaldo sin formato ante error de sintaxis
         try:
-            bot.reply_to(message, answer, parse_mode="Markdown", reply_markup=get_control_keyboard())
+            bot.reply_to(message, answer, parse_mode="Markdown")
         except Exception:
-            bot.reply_to(message, answer, reply_markup=get_control_keyboard())
+            bot.reply_to(message, answer)
 
     except Exception as e:
         bot.reply_to(message, f"Ocurrió un error al procesar la imagen: {str(e)}")
 
+@bot.message_handler(content_types=['photo'])
+def handle_photo(message):
+    threading.Thread(target=process_photo_async, args=(message,), daemon=True).start()
+
 # ---------------------------------------------------------
-# 6. Manejador de Texto Conversacional
+# 5. Manejador de Texto Conversacional
 # ---------------------------------------------------------
 @bot.message_handler(func=lambda message: True, content_types=['text'])
 def handle_text(message):
@@ -208,17 +196,16 @@ def handle_text(message):
         chat_histories[chat_id].append({"role": "assistant", "content": answer})
         chat_histories[chat_id] = chat_histories[chat_id][-14:]
 
-        # Intento de envío con parse_mode="Markdown", respaldo sin formato ante error de sintaxis
         try:
-            bot.reply_to(message, answer, parse_mode="Markdown", reply_markup=get_control_keyboard())
+            bot.reply_to(message, answer, parse_mode="Markdown")
         except Exception:
-            bot.reply_to(message, answer, reply_markup=get_control_keyboard())
+            bot.reply_to(message, answer)
 
     except Exception as e:
         bot.reply_to(message, f"Ocurrió un error al procesar la solicitud: {str(e)}")
 
 # ---------------------------------------------------------
-# 7. Inicio del Bucle Polling
+# 6. Inicio del Bucle Polling
 # ---------------------------------------------------------
 if __name__ == '__main__':
     print("Bot iniciando en Telegram...")
