@@ -44,16 +44,9 @@ if not TELEGRAM_TOKEN or not GROQ_API_KEY:
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 groq_client = Groq(api_key=GROQ_API_KEY)
 
-# Modelos OFICIALES VIGENTES en Groq (Texto)
-TEXT_MODELS = [
-    "openai/gpt-oss-20b",
-    "openai/gpt-oss-120b"
-]
-
-# Modelo OFICIAL VIGENTE para Visión (Fotos)
-VISION_MODELS = [
-    "qwen/qwen3.8-27b"
-]
+# Modelos oficiales de Groq
+TEXT_MODELS = ["openai/gpt-oss-20b", "openai/gpt-oss-120b"]
+VISION_MODELS = ["qwen/qwen3.8-27b"]
 
 chat_histories = {}
 
@@ -65,7 +58,6 @@ SYSTEM_PROMPT = (
     "- Utiliza símbolos Unicode claros para matemáticas (ejemplos: x², √x, a / b, π, ±, ∫, ×, ÷, ∞)."
 )
 
-# Función con Fallback para Texto
 def call_groq_text(messages_payload):
     last_exception = None
     for model_name in TEXT_MODELS:
@@ -79,10 +71,9 @@ def call_groq_text(messages_payload):
             return response.choices[0].message.content
         except Exception as e:
             last_exception = e
-            print(f"Advertencia: El modelo {model_name} fallo. Detalle: {str(e)}")
+            print(f"Advertencia: Modelo {model_name} fallo: {str(e)}")
     raise last_exception
 
-# Función con Fallback para Visión (Imágenes adjuntas)
 def call_groq_vision(prompt_text, image_url):
     last_exception = None
     for model_name in VISION_MODELS:
@@ -104,11 +95,11 @@ def call_groq_vision(prompt_text, image_url):
             return response.choices[0].message.content
         except Exception as e:
             last_exception = e
-            print(f"Advertencia: El modelo de visión {model_name} fallo. Detalle: {str(e)}")
+            print(f"Advertencia: Modelo de visión {model_name} fallo: {str(e)}")
     raise last_exception
 
 # ---------------------------------------------------------
-# 3. Teclado Interactivo de Memoria
+# 3. Teclado Interactivo
 # ---------------------------------------------------------
 def get_control_keyboard():
     keyboard = types.InlineKeyboardMarkup(row_width=2)
@@ -127,7 +118,7 @@ def send_welcome(message):
         "Puedo ayudarte con:\n"
         "• 💬 **Consultas de texto:** Pregúntame lo que necesites.\n"
         "• 🖼️ **Análisis de imágenes:** Envíame una foto para analizarla.\n"
-        "• 🎨 **Generación de imágenes:** Pídeme cosas como *'Dibuja un gato'*.\n\n"
+        "• 🎨 **Generación de imágenes:** Pídeme cosas como *'Dibuja un gato'* o *'Genera un perro'*.\n\n"
         "Usa los botones al final de los mensajes para administrar la memoria."
     )
     bot.reply_to(message, welcome_text, parse_mode="Markdown", reply_markup=get_control_keyboard())
@@ -143,7 +134,7 @@ def handle_topic_buttons(call):
         bot.answer_callback_query(call.id, "Continuando el tema actual")
 
 # ---------------------------------------------------------
-# 5. Manejador de Imágenes (Visión Artificial)
+# 5. Manejador de Fotos Recibidas (Visión)
 # ---------------------------------------------------------
 @bot.message_handler(content_types=['photo'])
 def handle_photo(message):
@@ -175,37 +166,40 @@ def handle_text(message):
     text = message.text.strip()
     text_lower = text.lower()
 
-    # Detectar peticiones de generación de imagen por palabras clave
-    keywords_imagen = [
-        "dibuja", "dibujar", "genera", "generar", "crea", "crear", 
-        "haz una imagen", "haz un", "haz una", "imagen de", "draw", "generate"
-    ]
+    # Disparadores claros de imagen
+    image_triggers = ["dibuja", "dibujar", "genera", "generar", "crea", "crear", "haz una imagen", "haz un dibujo", "imagen de"]
+    
+    is_image_request = any(trigger in text_lower for trigger in image_triggers)
 
-    # Caso 1: Generación de imágenes con Pollinations.ai
-    if any(kw in text_lower for kw in keywords_imagen):
+    if is_image_request:
         try:
             bot.send_chat_action(chat_id, 'upload_photo')
-            prompt_encoded = requests.utils.quote(text)
-            image_url = f"https://image.pollinations.ai/prompt/{prompt_encoded}?width=1024&height=1024&nologo=true"
             
-            res = requests.get(image_url, timeout=20)
-            if res.status_code == 200:
-                photo_bytes = io.BytesIO(res.content)
-                photo_bytes.name = "generated.jpg"
-                bot.send_photo(
-                    chat_id, 
-                    photo_bytes, 
-                    caption=f"🎨 Aquí tienes tu imagen para: *\"{text}\"*", 
-                    parse_mode="Markdown",
-                    reply_markup=get_control_keyboard()
-                )
-            else:
-                bot.reply_to(message, "No se pudo generar la imagen en Pollinations en este momento.")
+            # Limpiar el prompt eliminando palabras activadoras para mejor resultado en Pollinations
+            clean_prompt = text
+            for trigger in image_triggers:
+                clean_prompt = clean_prompt.lower().replace(trigger, "").strip()
+            
+            if not clean_prompt:
+                clean_prompt = text
+
+            prompt_encoded = requests.utils.quote(clean_prompt)
+            image_url = f"https://image.pollinations.ai/prompt/{prompt_encoded}?width=1024&height=1024&nologo=true&seed=42"
+
+            # Enviar la URL directamente como foto a Telegram (más rápido y confiable)
+            bot.send_photo(
+                chat_id, 
+                image_url, 
+                caption=f"🎨 **Imagen generada para:** *\"{text}\"*", 
+                parse_mode="Markdown",
+                reply_markup=get_control_keyboard()
+            )
+            return
         except Exception as e:
             bot.reply_to(message, f"Ocurrió un error al generar la imagen: {str(e)}")
-        return
+            return
 
-    # Caso 2: Conversación regular en Texto con Groq
+    # Conversación de Texto Normal con Groq
     bot.send_chat_action(chat_id, 'typing')
     
     if chat_id not in chat_histories:
@@ -232,4 +226,4 @@ def handle_text(message):
 if __name__ == '__main__':
     print("Bot iniciando en Telegram...")
     bot.infinity_polling(timeout=20, long_polling_timeout=10)
-    
+        
