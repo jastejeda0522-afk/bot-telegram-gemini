@@ -29,7 +29,6 @@ def run_http_server():
     print(f"Servidor HTTP escuchando en el puerto {port}...")
     httpd.serve_forever()
 
-# Iniciar servidor HTTP en segundo plano
 http_thread = threading.Thread(target=run_http_server, daemon=True)
 http_thread.start()
 
@@ -45,19 +44,12 @@ if not TELEGRAM_TOKEN or not GROQ_API_KEY:
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 groq_client = Groq(api_key=GROQ_API_KEY)
 
-# Lista de modelos de texto soportados en Groq
-TEXT_MODELS = [
-    "llama-3.1-8b-instant",
-    "llama-3.3-70b-versatile"
-]
+# Modelo principal de texto (estable en Groq)
+TEXT_MODEL = "llama-3.1-8b-instant"
 
-# Lista de modelos de visión soportados en Groq
-VISION_MODELS = [
-    "llama-3.2-11b-vision-preview",
-    "llama-3.2-90b-vision-preview"
-]
+# Modelo principal de visión (fotos)
+VISION_MODEL = "llama-3.2-11b-vision-preview"
 
-# Memoria conversacional por chat (hasta 14 mensajes)
 chat_histories = {}
 
 SYSTEM_PROMPT = (
@@ -69,44 +61,30 @@ SYSTEM_PROMPT = (
 )
 
 def call_groq_text(messages_payload):
-    last_exception = None
-    for model_name in TEXT_MODELS:
-        try:
-            response = groq_client.chat.completions.create(
-                model=model_name,
-                messages=messages_payload,
-                temperature=0.7,
-                max_tokens=2048,
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            last_exception = e
-            print(f"Error con modelo {model_name}: {str(e)}")
-    raise last_exception
+    response = groq_client.chat.completions.create(
+        model=TEXT_MODEL,
+        messages=messages_payload,
+        temperature=0.7,
+        max_tokens=2048,
+    )
+    return response.choices[0].message.content
 
 def call_groq_vision(prompt_text, image_url):
-    last_exception = None
-    for model_name in VISION_MODELS:
-        try:
-            response = groq_client.chat.completions.create(
-                model=model_name,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": f"{SYSTEM_PROMPT}\n\n{prompt_text}"},
-                            {"type": "image_url", "image_url": {"url": image_url}}
-                        ]
-                    }
-                ],
-                temperature=0.7,
-                max_tokens=1024,
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            last_exception = e
-            print(f"Error con modelo de visión {model_name}: {str(e)}")
-    raise last_exception
+    response = groq_client.chat.completions.create(
+        model=VISION_MODEL,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": f"{SYSTEM_PROMPT}\n\n{prompt_text}"},
+                    {"type": "image_url", "image_url": {"url": image_url}}
+                ]
+            }
+        ],
+        temperature=0.7,
+        max_tokens=1024,
+    )
+    return response.choices[0].message.content
 
 # ---------------------------------------------------------
 # 3. Teclado Interactivo de Memoria
@@ -175,7 +153,12 @@ def handle_text(message):
     chat_id = message.chat.id
     text = message.text.strip()
     text_lower = text.lower()
-    keywords_imagen = ["dibuja", "dibujar", "genera una imagen", "crea una imagen", "haz una imagen", "generate image", "draw"]
+
+    # Palabras clave ampliadas para detección de solicitud de imágenes
+    keywords_imagen = [
+        "dibuja", "dibujar", "genera", "generar", "crea", "crear", 
+        "haz una imagen", "haz un", "haz una", "imagen de", "draw", "generate"
+    ]
 
     # Caso 1: Generación de imágenes con Pollinations.ai
     if any(kw in text_lower for kw in keywords_imagen):
@@ -201,7 +184,7 @@ def handle_text(message):
             bot.reply_to(message, f"Ocurrió un error al generar la imagen: {str(e)}")
         return
 
-    # Caso 2: Conversación con Groq
+    # Caso 2: Conversación con Groq (Texto)
     bot.send_chat_action(chat_id, 'typing')
     
     if chat_id not in chat_histories:
@@ -228,4 +211,3 @@ def handle_text(message):
 if __name__ == '__main__':
     print("Bot iniciando en Telegram...")
     bot.infinity_polling(timeout=20, long_polling_timeout=10)
-    
