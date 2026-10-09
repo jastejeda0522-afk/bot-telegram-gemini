@@ -44,11 +44,16 @@ if not TELEGRAM_TOKEN or not GROQ_API_KEY:
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 groq_client = Groq(api_key=GROQ_API_KEY)
 
-# Modelo principal de texto (estable en Groq)
-TEXT_MODEL = "llama-3.1-8b-instant"
+# Modelos OFICIALES VIGENTES en Groq (Texto)
+TEXT_MODELS = [
+    "openai/gpt-oss-20b",
+    "openai/gpt-oss-120b"
+]
 
-# Modelo principal de visión (fotos)
-VISION_MODEL = "llama-3.2-11b-vision-preview"
+# Modelo OFICIAL VIGENTE para Visión (Fotos)
+VISION_MODELS = [
+    "qwen/qwen3.8-27b"
+]
 
 chat_histories = {}
 
@@ -60,31 +65,47 @@ SYSTEM_PROMPT = (
     "- Utiliza símbolos Unicode claros para matemáticas (ejemplos: x², √x, a / b, π, ±, ∫, ×, ÷, ∞)."
 )
 
+# Función con Fallback para Texto
 def call_groq_text(messages_payload):
-    response = groq_client.chat.completions.create(
-        model=TEXT_MODEL,
-        messages=messages_payload,
-        temperature=0.7,
-        max_tokens=2048,
-    )
-    return response.choices[0].message.content
+    last_exception = None
+    for model_name in TEXT_MODELS:
+        try:
+            response = groq_client.chat.completions.create(
+                model=model_name,
+                messages=messages_payload,
+                temperature=0.7,
+                max_tokens=2048,
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            last_exception = e
+            print(f"Advertencia: El modelo {model_name} fallo. Detalle: {str(e)}")
+    raise last_exception
 
+# Función con Fallback para Visión (Imágenes adjuntas)
 def call_groq_vision(prompt_text, image_url):
-    response = groq_client.chat.completions.create(
-        model=VISION_MODEL,
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": f"{SYSTEM_PROMPT}\n\n{prompt_text}"},
-                    {"type": "image_url", "image_url": {"url": image_url}}
-                ]
-            }
-        ],
-        temperature=0.7,
-        max_tokens=1024,
-    )
-    return response.choices[0].message.content
+    last_exception = None
+    for model_name in VISION_MODELS:
+        try:
+            response = groq_client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": f"{SYSTEM_PROMPT}\n\n{prompt_text}"},
+                            {"type": "image_url", "image_url": {"url": image_url}}
+                        ]
+                    }
+                ],
+                temperature=0.7,
+                max_tokens=1024,
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            last_exception = e
+            print(f"Advertencia: El modelo de visión {model_name} fallo. Detalle: {str(e)}")
+    raise last_exception
 
 # ---------------------------------------------------------
 # 3. Teclado Interactivo de Memoria
@@ -154,7 +175,7 @@ def handle_text(message):
     text = message.text.strip()
     text_lower = text.lower()
 
-    # Palabras clave ampliadas para detección de solicitud de imágenes
+    # Detectar peticiones de generación de imagen por palabras clave
     keywords_imagen = [
         "dibuja", "dibujar", "genera", "generar", "crea", "crear", 
         "haz una imagen", "haz un", "haz una", "imagen de", "draw", "generate"
@@ -184,7 +205,7 @@ def handle_text(message):
             bot.reply_to(message, f"Ocurrió un error al generar la imagen: {str(e)}")
         return
 
-    # Caso 2: Conversación con Groq (Texto)
+    # Caso 2: Conversación regular en Texto con Groq
     bot.send_chat_action(chat_id, 'typing')
     
     if chat_id not in chat_histories:
@@ -211,3 +232,4 @@ def handle_text(message):
 if __name__ == '__main__':
     print("Bot iniciando en Telegram...")
     bot.infinity_polling(timeout=20, long_polling_timeout=10)
+    
