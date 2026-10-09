@@ -1,69 +1,56 @@
 import os
-import logging
-from telegram import Update
-from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
-from google import genai
+import telebot
+import google.generativeai as genai
+from PIL import Image
+import io
 
-# Leer credenciales desde variables de entorno
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+# Configuración de claves desde las variables de entorno de Render
+TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN')
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 
-# Inicializar cliente de Gemini
-client = genai.Client(api_key=GEMINI_API_KEY)
+# Configuración de la API de Gemini
+genai.configure(api_key=GEMINI_API_KEY)
 
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+# Modelo actualizado a Gemini 3.8 Flash
+model = genai.GenerativeModel('gemini-3.8-flash')
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("¡Hola! Envíame texto, fotos o documentos y los analizaré con Gemini.")
+# Inicialización del Bot de Telegram
+bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
-async def manejar_texto(update: Update, context: ContextTypes.DEFAULT_TYPE):
+@bot.message_handler(commands=['start', 'help'])
+def send_welcome(message):
+    bot.reply_to(message, "¡Hola! Soy tu bot con Gemini 3.8 Flash. Envíame texto o una foto para ayudarte.")
+
+@bot.message_handler(content_types=['text'])
+def handle_text(message):
     try:
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=update.message.text
-        )
-        await update.message.reply_text(response.text)
+        response = model.generate_content(message.text)
+        bot.reply_to(message, response.text)
     except Exception as e:
-        await update.message.reply_text("Ocurrió un error al procesar el texto.")
-        print(f"Error: {e}")
+        print(f"Error al procesar texto: {e}")
+        bot.reply_to(message, "Ocurrió un error al procesar el texto.")
 
-async def manejar_archivo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    message = update.message
-    caption = message.caption or "Analiza este archivo y describe su contenido en detalle."
-    
-    if message.photo:
-        tg_file = await message.photo[-1].get_file()
-        file_path = "temp_image.jpg"
-    elif message.document:
-        tg_file = await message.document.get_file()
-        file_name = message.document.file_name or "documento"
-        file_path = f"temp_{file_name}"
-    else:
-        return
-
-    await message.reply_text("Procesando archivo...")
-
+@bot.message_handler(content_types=['photo'])
+def handle_photo(message):
     try:
-        await tg_file.download_to_drive(file_path)
-        uploaded_file = client.files.upload(file=file_path)
-
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=[uploaded_file, caption]
-        )
-        await message.reply_text(response.text)
+        # Descargar la foto enviada por el usuario
+        file_info = bot.get_file(message.photo[-1].file_id)
+        downloaded_file = bot.download_file(file_info.file_path)
+        
+        # Convertir bytes a imagen PIL
+        image = Image.open(io.BytesIO(downloaded_file))
+        
+        # Usar el texto de la foto si existe, de lo contrario usar una orden predeterminada
+        prompt = message.caption if message.caption else "Describe esta imagen con detalle."
+        
+        # Enviar prompt e imagen al modelo
+        response = model.generate_content([prompt, image])
+        bot.reply_to(message, response.text)
     except Exception as e:
-        await message.reply_text("Error al procesar el archivo.")
-        print(f"Error: {e}")
-    finally:
-        if os.path.exists(file_path):
-            os.remove(file_path)
+        print(f"Error al procesar imagen: {e}")
+        bot.reply_to(message, "Ocurrió un error al analizar la imagen.")
 
 if __name__ == '__main__':
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), manejar_texto))
-    app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, manejar_archivo))
+    print("Bot activo y escuchando mensajes...")
+    bot.infinity_polling()
     
-    print("Bot multimodal en ejecución...")
-    app.run_polling()
