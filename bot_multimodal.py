@@ -1,6 +1,6 @@
 import os
 import telebot
-from google import genai
+import google.generativeai as genai
 from PIL import Image
 import io
 
@@ -8,23 +8,21 @@ import io
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN')
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 
-# Inicializar cliente de Gemini con la nueva librería
-client = genai.Client(api_key=GEMINI_API_KEY)
+# Configurar Gemini con el modelo actualizado
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel('gemini-3.8-flash')
 
-# Inicializar Bot de Telegram
+# Inicializar el Bot de Telegram
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
-    bot.reply_to(message, "¡Hola! Soy tu bot de Gemini. Envíame un texto o una foto.")
+    bot.reply_to(message, "¡Hola! Soy tu bot de Gemini 3.8 Flash. Envíame un mensaje de texto o una foto.")
 
 @bot.message_handler(content_types=['text'])
 def handle_text(message):
     try:
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=message.text,
-        )
+        response = model.generate_content(message.text)
         bot.reply_to(message, response.text)
     except Exception as e:
         print(f"Error Gemini Texto: {e}")
@@ -38,10 +36,7 @@ def handle_photo(message):
         image = Image.open(io.BytesIO(downloaded_file))
         
         prompt = message.caption if message.caption else "Describe esta imagen."
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=[image, prompt],
-        )
+        response = model.generate_content([prompt, image])
         bot.reply_to(message, response.text)
     except Exception as e:
         print(f"Error Gemini Foto: {e}")
