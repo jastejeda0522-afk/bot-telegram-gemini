@@ -73,6 +73,8 @@ chat_histories = {}
 
 SYSTEM_PROMPT = (
     "Eres un asistente virtual empático, claro, servicial y técnico cuando se requiere.\n\n"
+    "CAPACIDADES:\n"
+    "- Tienes la capacidad de analizar imágenes y fotos. Si el usuario te menciona que te enviará una foto o imagen, indícale amablemente que estás listo para recibirla y analizarla.\n\n"
     "REGLAS DE FORMATO Y MATEMÁTICAS:\n"
     "- Responde de manera bien estructurada en formato Markdown amigable en español.\n"
     "- NO utilices sintaxis LaTeX como $, $$, \\frac, \\begin, \\end.\n"
@@ -220,12 +222,10 @@ def handle_text(message):
 # ---------------------------------------------------------
 if __name__ == '__main__':
     print("Bot iniciando en Telegram...")
-    # Limpieza segura de la cola sin forzar peticiones offset conflictivas
     try:
         bot.delete_webhook(drop_pending_updates=True)
     except Exception as e:
         print(f"Aviso en limpieza de webhook: {e}")
 
-    # Bucle continuo con reintento automático integrado
     bot.infinity_polling(timeout=20, long_polling_timeout=10)
-                         
+    
