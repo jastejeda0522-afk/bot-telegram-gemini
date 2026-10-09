@@ -1,2 +1,3 @@
-google-genai
-python-telegram-bot
+pyTelegramBotAPI
+google-generativeai
+Pillow
