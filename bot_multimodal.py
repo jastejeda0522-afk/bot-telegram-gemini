@@ -82,7 +82,7 @@ def call_groq_text(messages_payload):
             return response.choices[0].message.content
         except Exception as e:
             last_exception = e
-            print(f"Advertencia: Modelo {model_name} no disponible. Probando siguiente. Detalle: {str(e)}")
+            print(f"Advertencia: Modelo {model_name} no disponible. Detalle: {str(e)}")
     raise last_exception
 
 # Función con Fallback automático para imágenes (Visión)
@@ -230,5 +230,5 @@ def handle_text(message):
 # ---------------------------------------------------------
 if __name__ == '__main__':
     print("Bot iniciando en Telegram...")
-    bot.infinity_polling(timeout=20, long_polling_timeout=10, skip_pending_updates=True)
+    bot.infinity_polling(timeout=20, long_polling_timeout=10)
     
