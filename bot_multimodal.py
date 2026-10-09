@@ -28,19 +28,19 @@ TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 client = genai.Client(api_key=GEMINI_API_KEY)
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
-# Función auxiliar para enviar mensajes largos dividiéndolos en partes
+# Función auxiliar para enviar mensajes largos
 def send_long_message(message_obj, text):
     max_length = 4000
     for i in range(0, len(text), max_length):
         bot.reply_to(message_obj, text[i:i + max_length])
 
-# Función auxiliar para llamar a Gemini con reintentos si ocurre un error 503
+# Función auxiliar para llamar a Gemini con reintentos
 def generate_with_retry(contents):
     max_retries = 3
     for attempt in range(max_retries):
         try:
             response = client.models.generate_content(
-                model="gemini-3.8-flash",
+                model="gemini-2.0-flash",
                 contents=contents
             )
             return response.text
