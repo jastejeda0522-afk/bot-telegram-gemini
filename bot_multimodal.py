@@ -8,7 +8,7 @@ from telebot import types
 from groq import Groq
 
 # ---------------------------------------------------------
-# 1. Servidor HTTP para Keep-Alive / Health Check en Render
+# 1. Servidor HTTP para Keep-Alive en Render
 # ---------------------------------------------------------
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -45,16 +45,15 @@ if not TELEGRAM_TOKEN or not GROQ_API_KEY:
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 groq_client = Groq(api_key=GROQ_API_KEY)
 
-# Modelos oficiales vigentes en Groq (Texto)
+# Modelos OFICIALES ACTIVOS en Groq (Texto)
 TEXT_MODELS = [
-    "llama-3.1-8b-instant",
-    "llama-3.3-70b-versatile"
+    "openai/gpt-oss-20b",
+    "openai/gpt-oss-120b"
 ]
 
-# Modelo oficial vigente para Visión (Imágenes)
+# Modelo OFICIAL ACTIVO para Visión (Imágenes)
 VISION_MODELS = [
-    "llama-3.2-11b-vision-preview",
-    "llama-3.2-90b-vision-preview"
+    "qwen/qwen3.8-27b"
 ]
 
 # Almacenamiento de memoria conversacional (máximo 14 mensajes por usuario)
@@ -82,7 +81,7 @@ def call_groq_text(messages_payload):
             return response.choices[0].message.content
         except Exception as e:
             last_exception = e
-            print(f"Advertencia: Modelo {model_name} no disponible. Detalle: {str(e)}")
+            print(f"Advertencia: Modelo {model_name} fallo. Detalle: {str(e)}")
     raise last_exception
 
 # Función con Fallback automático para imágenes (Visión)
@@ -107,7 +106,7 @@ def call_groq_vision(prompt_text, image_url):
             return response.choices[0].message.content
         except Exception as e:
             last_exception = e
-            print(f"Advertencia: Modelo de visión {model_name} no disponible. Detalle: {str(e)}")
+            print(f"Advertencia: Modelo de visión {model_name} fallo. Detalle: {str(e)}")
     raise last_exception
 
 # ---------------------------------------------------------
@@ -231,4 +230,4 @@ def handle_text(message):
 if __name__ == '__main__':
     print("Bot iniciando en Telegram...")
     bot.infinity_polling(timeout=20, long_polling_timeout=10)
-    
+        
