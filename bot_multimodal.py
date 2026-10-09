@@ -1,5 +1,5 @@
 import os
-import io
+import time
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import requests
@@ -8,7 +8,7 @@ from telebot import types
 from groq import Groq
 
 # ---------------------------------------------------------
-# 1. Servidor HTTP para Keep-Alive en Render
+# 1. Servidor HTTP y Mecanismo Self-Ping (Keep-Alive)
 # ---------------------------------------------------------
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -29,8 +29,29 @@ def run_http_server():
     print(f"Servidor HTTP escuchando en el puerto {port}...")
     httpd.serve_forever()
 
+def auto_ping_loop():
+    """Realiza un autod disparo HTTP a la URL pública de Render cada 10 min."""
+    render_url = os.environ.get("RENDER_EXTERNAL_URL")
+    if not render_url:
+        print("Aviso: RENDER_EXTERNAL_URL no esta definida. Auto-ping desactivado.")
+        return
+
+    print(f"Iniciando Auto-Ping hacia: {render_url}")
+    while True:
+        time.sleep(600)  # Esperar 10 minutos (600 segundos)
+        try:
+            res = requests.get(render_url, timeout=10)
+            print(f"[Auto-Ping] Peticion enviada a {render_url} - Status Code: {res.status_code}")
+        except Exception as e:
+            print(f"[Auto-Ping Error] Fallo al enviar peticion: {str(e)}")
+
+# Iniciar servidor HTTP en segundo plano
 http_thread = threading.Thread(target=run_http_server, daemon=True)
 http_thread.start()
+
+# Iniciar hilo de auto-ping en segundo plano
+ping_thread = threading.Thread(target=auto_ping_loop, daemon=True)
+ping_thread.start()
 
 # ---------------------------------------------------------
 # 2. Configuración y Clientes de API
@@ -114,11 +135,10 @@ def get_control_keyboard():
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     welcome_text = (
-        "¡Hola! 👋 Soy tu asistente virtual multimodal.\n\n"
+        "¡Hola! 👋 Soy tu asistente virtual.\n\n"
         "Puedo ayudarte con:\n"
         "• 💬 **Consultas de texto:** Pregúntame lo que necesites.\n"
-        "• 🖼️ **Análisis de imágenes:** Envíame una foto para analizarla.\n"
-        "• 🎨 **Generación de imágenes:** Pídeme cosas como *'Dibuja un gato'* o *'Genera un perro'*.\n\n"
+        "• 🖼️ **Análisis de imágenes:** Envíame una foto para analizarla.\n\n"
         "Usa los botones al final de los mensajes para administrar la memoria."
     )
     bot.reply_to(message, welcome_text, parse_mode="Markdown", reply_markup=get_control_keyboard())
@@ -158,48 +178,13 @@ def handle_photo(message):
         bot.reply_to(message, f"Ocurrió un error al procesar la imagen: {str(e)}")
 
 # ---------------------------------------------------------
-# 6. Manejador de Texto y Generación de Imágenes
+# 6. Manejador de Texto Conversacional
 # ---------------------------------------------------------
 @bot.message_handler(func=lambda message: True, content_types=['text'])
 def handle_text(message):
     chat_id = message.chat.id
     text = message.text.strip()
-    text_lower = text.lower()
 
-    # Disparadores claros de imagen
-    image_triggers = ["dibuja", "dibujar", "genera", "generar", "crea", "crear", "haz una imagen", "haz un dibujo", "imagen de"]
-    
-    is_image_request = any(trigger in text_lower for trigger in image_triggers)
-
-    if is_image_request:
-        try:
-            bot.send_chat_action(chat_id, 'upload_photo')
-            
-            # Limpiar el prompt eliminando palabras activadoras para mejor resultado en Pollinations
-            clean_prompt = text
-            for trigger in image_triggers:
-                clean_prompt = clean_prompt.lower().replace(trigger, "").strip()
-            
-            if not clean_prompt:
-                clean_prompt = text
-
-            prompt_encoded = requests.utils.quote(clean_prompt)
-            image_url = f"https://image.pollinations.ai/prompt/{prompt_encoded}?width=1024&height=1024&nologo=true&seed=42"
-
-            # Enviar la URL directamente como foto a Telegram (más rápido y confiable)
-            bot.send_photo(
-                chat_id, 
-                image_url, 
-                caption=f"🎨 **Imagen generada para:** *\"{text}\"*", 
-                parse_mode="Markdown",
-                reply_markup=get_control_keyboard()
-            )
-            return
-        except Exception as e:
-            bot.reply_to(message, f"Ocurrió un error al generar la imagen: {str(e)}")
-            return
-
-    # Conversación de Texto Normal con Groq
     bot.send_chat_action(chat_id, 'typing')
     
     if chat_id not in chat_histories:
