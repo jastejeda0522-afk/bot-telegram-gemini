@@ -220,5 +220,5 @@ def handle_text(message):
 # ---------------------------------------------------------
 if __name__ == '__main__':
     print("Bot iniciando en Telegram...")
-    bot.infinity_polling(timeout=20, long_polling_timeout=10)
+    bot.infinity_polling(timeout=20, long_polling_timeout=10, skip_pending=True)
     
