@@ -137,7 +137,7 @@ def call_groq_vision(prompt_text, image_url):
                     }
                 ],
                 temperature=0.7,
-                max_tokens=1024,
+                max_tokens=800,  # Ajustado a 800 para respetar el límite de 1000 OTPM de Groq
             )
             return response.choices[0].message.content
         except Exception as e:
@@ -233,4 +233,3 @@ if __name__ == '__main__':
         print(f"Aviso en limpieza de webhook: {e}")
 
     bot.infinity_polling(timeout=20, long_polling_timeout=10)
-    
