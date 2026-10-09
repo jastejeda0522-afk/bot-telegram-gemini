@@ -6,7 +6,7 @@ from google import genai
 from PIL import Image
 import io
 
-# 1. Servidor HTTP falso para satisfacer la verificación de puertos de Render (Plan Gratuito)
+# 1. Servidor HTTP simulado para el puerto en el plan gratuito de Render
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -18,10 +18,9 @@ def start_health_check_server():
     server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
     server.serve_forever()
 
-# Iniciar servidor web en un hilo independiente
 threading.Thread(target=start_health_check_server, daemon=True).start()
 
-# 2. Configuración e inicio del Bot con Gemini
+# 2. Configuración del Bot de Telegram y Gemini API
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN')
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 
@@ -36,7 +35,7 @@ def send_welcome(message):
 def handle_text(message):
     try:
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-3.8-flash',
             contents=message.text,
         )
         bot.reply_to(message, response.text)
@@ -53,7 +52,7 @@ def handle_photo(message):
         
         prompt = message.caption if message.caption else "Describe esta imagen."
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-3.8-flash',
             contents=[prompt, image],
         )
         bot.reply_to(message, response.text)
