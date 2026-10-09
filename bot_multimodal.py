@@ -35,9 +35,9 @@ def send_long_message(message_obj, text):
     for i in range(0, len(text), max_length):
         bot.reply_to(message_obj, text[i:i + max_length])
 
-# Función auxiliar para llamar a Gemini con reintentos si ocurre error 503
+# Función auxiliar para llamar a Gemini con reintentos progresivos si ocurre error 503
 def generate_with_retry(contents):
-    max_retries = 3
+    max_retries = 5  # Reintenta hasta 5 veces en caso de alta demanda
     for attempt in range(max_retries):
         try:
             response = client.models.generate_content(
@@ -46,8 +46,9 @@ def generate_with_retry(contents):
             )
             return response.text
         except Exception as e:
+            # Si el servidor está saturado (503), espera un tiempo progresivo (3s, 6s, 9s...)
             if "503" in str(e) and attempt < max_retries - 1:
-                time.sleep(2)
+                time.sleep(3 * (attempt + 1))
                 continue
             raise e
 
@@ -84,4 +85,4 @@ def handle_photo(message):
 # 4. Iniciar el bot
 if __name__ == "__main__":
     bot.infinity_polling()
-    
+                                 
