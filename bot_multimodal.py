@@ -4,22 +4,22 @@ import google.generativeai as genai
 from PIL import Image
 import io
 
-# Configuración de claves desde las variables de entorno de Render
+# Claves desde variables de entorno
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN')
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 
-# Configuración de la API de Gemini
+# Configuración de Gemini
 genai.configure(api_key=GEMINI_API_KEY)
 
-# Modelo actualizado a Gemini 3.8 Flash
-model = genai.GenerativeModel('gemini-3.8-flash')
+# Modelo estándar compatible
+model = genai.GenerativeModel('gemini-1.5-flash')
 
-# Inicialización del Bot de Telegram
+# Inicializar Bot de Telegram
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
-    bot.reply_to(message, "¡Hola! Soy tu bot con Gemini 3.8 Flash. Envíame texto o una foto para ayudarte.")
+    bot.reply_to(message, "¡Hola! Soy tu bot de Gemini. Envíame un texto o una foto.")
 
 @bot.message_handler(content_types=['text'])
 def handle_text(message):
@@ -27,30 +27,24 @@ def handle_text(message):
         response = model.generate_content(message.text)
         bot.reply_to(message, response.text)
     except Exception as e:
-        print(f"Error al procesar texto: {e}")
-        bot.reply_to(message, "Ocurrió un error al procesar el texto.")
+        print(f"Error Gemini Texto: {e}")
+        bot.reply_to(message, f"Ocurrió un error con Gemini:\n{e}")
 
 @bot.message_handler(content_types=['photo'])
 def handle_photo(message):
     try:
-        # Descargar la foto enviada por el usuario
         file_info = bot.get_file(message.photo[-1].file_id)
         downloaded_file = bot.download_file(file_info.file_path)
-        
-        # Convertir bytes a imagen PIL
         image = Image.open(io.BytesIO(downloaded_file))
         
-        # Usar el texto de la foto si existe, de lo contrario usar una orden predeterminada
-        prompt = message.caption if message.caption else "Describe esta imagen con detalle."
-        
-        # Enviar prompt e imagen al modelo
+        prompt = message.caption if message.caption else "Describe esta imagen."
         response = model.generate_content([prompt, image])
         bot.reply_to(message, response.text)
     except Exception as e:
-        print(f"Error al procesar imagen: {e}")
-        bot.reply_to(message, "Ocurrió un error al analizar la imagen.")
+        print(f"Error Gemini Foto: {e}")
+        bot.reply_to(message, f"Ocurrió un error con la imagen:\n{e}")
 
 if __name__ == '__main__':
-    print("Bot activo y escuchando mensajes...")
+    print("Bot activo y escuchando...")
     bot.infinity_polling()
     
