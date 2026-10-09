@@ -1,41 +1,62 @@
 import os
 import io
-import urllib.parse
-import urllib.request
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import requests
 import telebot
 from telebot import types
 from groq import Groq
 
 # ---------------------------------------------------------
-# 1. CONFIGURACIÓN Y VARIABLES DE ENTORNO
+# 1. Servidor HTTP para mantener el servicio activo en Render
+# ---------------------------------------------------------
+class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/html')
+        self.end_headers()
+        self.wfile.write(b"Bot activo y corriendo exitosamente.")
+
+def run_http_server():
+    port = int(os.environ.get("PORT", 10000))
+    server_address = ('', port)
+    httpd = HTTPServer(server_address, SimpleHTTPRequestHandler)
+    print(f"Servidor HTTP escuchando en el puerto {port}...")
+    httpd.serve_forever()
+
+# Iniciar servidor en segundo plano
+http_thread = threading.Thread(target=run_http_server, daemon=True)
+http_thread.start()
+
+# ---------------------------------------------------------
+# 2. Configuración y Clientes de API
 # ---------------------------------------------------------
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 
 if not TELEGRAM_TOKEN or not GROQ_API_KEY:
-    raise ValueError("Faltan las variables de entorno TELEGRAM_TOKEN o GROQ_API_KEY.")
+    raise ValueError("Faltan las variables TELEGRAM_TOKEN o GROQ_API_KEY.")
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 groq_client = Groq(api_key=GROQ_API_KEY)
 
-# Modelos recomendados de Groq
-TEXT_MODEL = "llama-3.3-70b-versatile"
-VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
+# Modelos para la API de Groq
+MODEL_TEXTO = "llama3-8b-8192"
+MODEL_VISION = "meta-llama/llama-4-scout-17b-16e-instruct"
 
-# Almacenamiento de memoria conversacional por chat (hasta 14 mensajes)
+# Almacenamiento de contexto (hasta 14 mensajes por chat_id)
 chat_histories = {}
 
 SYSTEM_PROMPT = (
-    "Eres un asistente virtual multimodal útil, inteligente y versátil. "
-    "Respondes preguntas, realizas investigaciones, ayudas con tareas, traduces texto y escribes o depuras código de programación.\n\n"
-    "REGLAS DE FORMATO MATEMÁTICO:\n"
-    "- NO utilices sintaxis LaTeX compleja como $,$$, \\frac, \\begin, \\end ni corchetes especiales que puedan fallar en Telegram.\n"
-    "- Usa siempre caracteres Unicode claros y símbolos estándar legible para matemáticas (ejemplos: x², √x, a / b, π, ±, ∫, ×, ÷, ∞).\n"
-    "- Utiliza formato Markdown de Telegram (negritas, cursivas, bloques de código ```) para organizar la información claramente."
+    "Eres un asistente virtual empático, claro, servicial y técnico cuando se requiere.\n\n"
+    "REGLAS DE FORMATO Y MATEMÁTICAS:\n"
+    "- Responde de manera bien estructurada en formato Markdown amigable en español.\n"
+    "- NO utilices sintaxis LaTeX como $, $$, \\frac, \\begin, \\end.\n"
+    "- Utiliza símbolos Unicode claros para matemáticas (ejemplos: x², √x, a / b, π, ±, ∫, ×, ÷, ∞)."
 )
 
 # ---------------------------------------------------------
-# 2. TECLADO INTERACTIVO (BOTONES CONTINUAR / NUEVO TEMA)
+# 3. Teclado Interactivo de Memoria Conversacional
 # ---------------------------------------------------------
 def get_control_keyboard():
     keyboard = types.InlineKeyboardMarkup(row_width=2)
@@ -45,20 +66,19 @@ def get_control_keyboard():
     return keyboard
 
 # ---------------------------------------------------------
-# 3. MANEJADORES DE COMANDOS Y CALLBACKS
+# 4. Manejadores de Comandos y Callbacks
 # ---------------------------------------------------------
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     welcome_text = (
-        "¡Hola! 👋 Soy tu asistente multimodal.\n\n"
+        "¡Hola! 👋 Soy tu asistente virtual multimodal.\n\n"
         "Puedo ayudarte con:\n"
-        "• 🧠 Investigaciones, tareas, traducciones y resúmenes.\n"
-        "• 💻 Programación y corrección de código.\n"
-        "• 👁️ Análisis de imágenes y capturas de pantalla.\n"
-        "• 🎨 Generación de imágenes (pídeme 'Dibuja...' o 'Crea una imagen...').\n\n"
-        "Control manual de tema: Al final de mis respuestas podrás pulsar 'Continuar Tema' o 'Nuevo Tema' para gestionar el contexto."
+        "• 💬 **Consultas de texto:** Pregúntame lo que necesites.\n"
+        "• 🖼️ **Análisis de imágenes:** Envíame una foto o captura para analizarla.\n"
+        "• 🎨 **Generación de imágenes:** Pídeme cosas como *'Dibuja un paisaje digital'*\n\n"
+        "Al final de cada respuesta podrás pulsar 'Continuar Tema' o 'Nuevo Tema' para controlar la memoria."
     )
-    bot.reply_to(message, welcome_text, reply_markup=get_control_keyboard())
+    bot.reply_to(message, welcome_text, parse_mode="Markdown", reply_markup=get_control_keyboard())
 
 @bot.callback_query_handler(func=lambda call: call.data in ["topic_continue", "topic_reset"])
 def handle_topic_buttons(call):
@@ -66,131 +86,114 @@ def handle_topic_buttons(call):
     if call.data == "topic_reset":
         chat_histories[chat_id] = []
         bot.answer_callback_query(call.id, "Contexto reiniciado")
-        bot.send_message(chat_id, "🔄 **Tema reiniciado.** ¿En qué te ayudo ahora?", parse_mode="Markdown")
+        bot.send_message(chat_id, "🔄 **Tema reiniciado.** ¿En qué te puedo ayudar ahora?", parse_mode="Markdown")
     elif call.data == "topic_continue":
         bot.answer_callback_query(call.id, "Continuando el tema actual")
 
 # ---------------------------------------------------------
-# 4. MANEJADOR DE FOTOS (ANÁLISIS DE IMÁGENES)
+# 5. Manejador de Imágenes (Visión Artificial)
 # ---------------------------------------------------------
 @bot.message_handler(content_types=['photo'])
 def handle_photo(message):
     chat_id = message.chat.id
-    bot.send_chat_action(chat_id, 'typing')
-    
-    caption = message.caption if message.caption else "Describe y analiza esta imagen en detalle."
-    
     try:
+        bot.send_chat_action(chat_id, 'typing')
         file_info = bot.get_file(message.photo[-1].file_id)
-        file_url = f"[https://api.telegram.org/file/bot](https://api.telegram.org/file/bot){TELEGRAM_TOKEN}/{file_info.file_path}"
-        
+        file_url = f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_info.file_path}"
+        user_prompt = message.caption if message.caption else "Describe esta imagen con detalle."
+
         response = groq_client.chat.completions.create(
-            model=VISION_MODEL,
+            model=MODEL_VISION,
             messages=[
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": caption},
+                        {"type": "text", "text": f"{SYSTEM_PROMPT}\n\n{user_prompt}"},
                         {"type": "image_url", "image_url": {"url": file_url}}
                     ]
                 }
             ],
             temperature=0.7,
-            max_tokens=1024
+            max_tokens=1024,
         )
-        
         answer = response.choices[0].message.content
-        
-        # Guardar interacción en la memoria
+
+        # Guardar en memoria
         if chat_id not in chat_histories:
             chat_histories[chat_id] = []
-        chat_histories[chat_id].append({"role": "user", "content": f"[Foto enviada] {caption}"})
+        chat_histories[chat_id].append({"role": "user", "content": f"[Foto enviada] {user_prompt}"})
         chat_histories[chat_id].append({"role": "assistant", "content": answer})
         chat_histories[chat_id] = chat_histories[chat_id][-14:]
-        
+
         bot.reply_to(message, answer, parse_mode="Markdown", reply_markup=get_control_keyboard())
     except Exception as e:
         bot.reply_to(message, f"Ocurrió un error al procesar la imagen: {str(e)}")
 
 # ---------------------------------------------------------
-# 5. MANEJADOR DE TEXTO (CHAT Y GENERACIÓN DE IMÁGENES)
+# 6. Manejador de Texto (Chat y Generación de Imágenes)
 # ---------------------------------------------------------
 @bot.message_handler(func=lambda message: True, content_types=['text'])
 def handle_text(message):
     chat_id = message.chat.id
-    user_text = message.text.strip()
-    
-    # Detección para generación de imágenes vía Pollinations.ai
-    trigger_words = ["dibuja", "dibujar", "crea una imagen", "haz una imagen", "genera una imagen", "haz un dibujo"]
-    if any(phrase in user_text.lower() for phrase in trigger_words):
-        bot.send_chat_action(chat_id, 'upload_photo')
+    text = message.text.strip()
+    text_lower = text.lower()
+    keywords_imagen = ["dibuja", "dibujar", "genera una imagen", "crea una imagen", "haz una imagen", "generate image", "draw"]
+
+    # Caso 1: Generación de imágenes vía Pollinations.ai
+    if any(kw in text_lower for kw in keywords_imagen):
         try:
-            prompt_encoded = urllib.parse.quote(user_text)
-            image_url = f"[https://image.pollinations.ai/prompt/](https://image.pollinations.ai/prompt/){prompt_encoded}?width=1024&height=1024&nologo=true"
+            bot.send_chat_action(chat_id, 'upload_photo')
+            prompt_encoded = requests.utils.quote(text)
+            image_url = f"https://image.pollinations.ai/prompt/{prompt_encoded}?width=1024&height=1024&nologo=true"
             
-            req = urllib.request.Request(image_url, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req) as resp:
-                image_bytes = resp.read()
-            
-            photo_file = io.BytesIO(image_bytes)
-            photo_file.name = 'generated_image.jpg'
-            
-            bot.send_photo(chat_id, photo_file, caption=f"🖼️ Imagen para: *{user_text}*", parse_mode="Markdown", reply_markup=get_control_keyboard())
-            return
+            res = requests.get(image_url, timeout=15)
+            if res.status_code == 200:
+                photo_bytes = io.BytesIO(res.content)
+                photo_bytes.name = "generated.jpg"
+                bot.send_photo(
+                    chat_id, 
+                    photo_bytes, 
+                    caption=f"🎨 Aquí tienes tu imagen para: *\"{text}\"*", 
+                    parse_mode="Markdown",
+                    reply_markup=get_control_keyboard()
+                )
+            else:
+                bot.reply_to(message, "No se pudo generar la imagen en Pollinations en este momento.")
         except Exception as e:
             bot.reply_to(message, f"Ocurrió un error al generar la imagen: {str(e)}")
-            return
+        return
 
-    # Procesamiento de texto normal con Groq
+    # Caso 2: Conversación general con memoria usando Groq
     bot.send_chat_action(chat_id, 'typing')
     
     if chat_id not in chat_histories:
         chat_histories[chat_id] = []
-        
-    chat_histories[chat_id].append({"role": "user", "content": user_text})
+
+    chat_histories[chat_id].append({"role": "user", "content": text})
     chat_histories[chat_id] = chat_histories[chat_id][-14:]
-    
-    messages_payload = [{"role": "system", "content": SYSTEM_PROMPT}] + chat_histories[chat_id]
-    
+
+    payload = [{"role": "system", "content": SYSTEM_PROMPT}] + chat_histories[chat_id]
+
     try:
         response = groq_client.chat.completions.create(
-            model=TEXT_MODEL,
-            messages=messages_payload,
+            model=MODEL_TEXTO,
+            messages=payload,
             temperature=0.7,
-            max_tokens=2048
+            max_tokens=2048,
         )
-        
         answer = response.choices[0].message.content
+        
         chat_histories[chat_id].append({"role": "assistant", "content": answer})
         chat_histories[chat_id] = chat_histories[chat_id][-14:]
-        
+
         bot.reply_to(message, answer, parse_mode="Markdown", reply_markup=get_control_keyboard())
     except Exception as e:
         bot.reply_to(message, f"Ocurrió un error al procesar la solicitud: {str(e)}")
 
 # ---------------------------------------------------------
-# 6. SERVIDOR HTTP PARA HEALTH CHECKS EN RENDER Y RUNNER
+# 7. Iniciar Polling
 # ---------------------------------------------------------
-import http.server
-import socketserver
-import threading
-
-class HealthCheckHandler(http.server.SimpleHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.send_header('Content-type', 'text/html')
-        self.end_headers()
-        self.wfile.write(b"OK")
-    def log_message(self, format, *args):
-        return
-
-def run_http_server():
-    port = int(os.environ.get("PORT", 10000))
-    with socketserver.TCPServer(("", port), HealthCheckHandler) as httpd:
-        httpd.serve_forever()
-
-if __name__ == "__main__":
-    server_thread = threading.Thread(target=run_http_server, daemon=True)
-    server_thread.start()
-    print("Bot iniciando infinity_polling...")
+if __name__ == '__main__':
+    print("Bot iniciando en Telegram...")
     bot.infinity_polling(timeout=20, long_polling_timeout=10)
+    
