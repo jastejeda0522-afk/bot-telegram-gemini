@@ -1,22 +1,36 @@
 import os
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 import telebot
 from google import genai
 from PIL import Image
 import io
 
-# Obtener variables de entorno
+# 1. Servidor HTTP falso para satisfacer la verificación de puertos de Render (Plan Gratuito)
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot OK")
+
+def start_health_check_server():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
+    server.serve_forever()
+
+# Iniciar servidor web en un hilo independiente
+threading.Thread(target=start_health_check_server, daemon=True).start()
+
+# 2. Configuración e inicio del Bot con Gemini
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN')
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 
-# Inicializar el cliente oficial de Gemini
 client = genai.Client(api_key=GEMINI_API_KEY)
-
-# Inicializar el Bot de Telegram
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
-    bot.reply_to(message, "¡Hola! Soy tu bot de Gemini. Envíame un mensaje de texto o una foto.")
+    bot.reply_to(message, "¡Hola! Soy tu bot de Gemini. Envíame un texto o una foto.")
 
 @bot.message_handler(content_types=['text'])
 def handle_text(message):
