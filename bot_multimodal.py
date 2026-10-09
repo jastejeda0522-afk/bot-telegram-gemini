@@ -4,22 +4,20 @@ import google.generativeai as genai
 from PIL import Image
 import io
 
-# Claves desde variables de entorno
+# Obtener variables de entorno de Render
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN')
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 
-# Configuración de Gemini
+# Configuración de Gemini con el modelo requerido
 genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel('gemini-3.8-flash')
 
-# Modelo estándar compatible
-model = genai.GenerativeModel('gemini-1.5-flash')
-
-# Inicializar Bot de Telegram
+# Inicialización del Bot
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
-    bot.reply_to(message, "¡Hola! Soy tu bot de Gemini. Envíame un texto o una foto.")
+    bot.reply_to(message, "¡Hola! Soy tu bot impulsado por Gemini 3.8 Flash. Envíame un texto o una foto.")
 
 @bot.message_handler(content_types=['text'])
 def handle_text(message):
@@ -28,7 +26,7 @@ def handle_text(message):
         bot.reply_to(message, response.text)
     except Exception as e:
         print(f"Error Gemini Texto: {e}")
-        bot.reply_to(message, f"Ocurrió un error con Gemini:\n{e}")
+        bot.reply_to(message, f"Ocurrió un error al procesar el texto:\n{e}")
 
 @bot.message_handler(content_types=['photo'])
 def handle_photo(message):
@@ -42,7 +40,7 @@ def handle_photo(message):
         bot.reply_to(message, response.text)
     except Exception as e:
         print(f"Error Gemini Foto: {e}")
-        bot.reply_to(message, f"Ocurrió un error con la imagen:\n{e}")
+        bot.reply_to(message, f"Ocurrió un error al procesar la imagen:\n{e}")
 
 if __name__ == '__main__':
     print("Bot activo y escuchando...")
