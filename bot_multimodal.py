@@ -117,9 +117,9 @@ def clean_latex_output(text):
     return text
 
 def send_split_message(message, text):
-    """Maneja el límite de caracteres dividiendo la respuesta en partes y preguntando si desea continuar."""
+    """Maneja el límite de caracteres dividiendo la respuesta en partes de forma limpia."""
     text = clean_latex_output(text)
-    max_length = 3500
+    max_length = 4000
     if len(text) <= max_length:
         try:
             bot.reply_to(message, text, parse_mode="Markdown")
@@ -130,9 +130,9 @@ def send_split_message(message, text):
         for index, chunk in enumerate(chunks):
             try:
                 if index == 0:
-                    bot.reply_to(message, chunk + "\n\n*(Esta respuesta es larga. ¿Estás listo para la siguiente parte?)*", parse_mode="Markdown")
+                    bot.reply_to(message, chunk + "\n\n*(Continuamos en el siguiente mensaje...)*", parse_mode="Markdown")
                 else:
-                    bot.send_message(message.chat.id, chunk + ("\n\n*(¿Continuamos con la siguiente parte?)*" if index < len(chunks)-1 else ""), parse_mode="Markdown")
+                    bot.send_message(message.chat.id, chunk, parse_mode="Markdown")
             except Exception:
                 if index == 0:
                     bot.reply_to(message, chunk)
@@ -147,7 +147,7 @@ def call_groq_text(messages_payload):
                 model=model_name,
                 messages=messages_payload,
                 temperature=0.7,
-                max_tokens=3000,  # Aumentado para evitar cortes a mitad de respuesta
+                max_tokens=4000,  # Ampliado para permitir respuestas extensas completas
             )
             return response.choices[0].message.content
         except Exception as e:
@@ -171,7 +171,7 @@ def call_groq_vision(prompt_text, image_url):
                     }
                 ],
                 temperature=0.7,
-                max_tokens=2000,  # Aumentado para visión
+                max_tokens=3000,
             )
             return response.choices[0].message.content
         except Exception as e:
@@ -261,12 +261,11 @@ def handle_text(message):
 if __name__ == '__main__':
     print("Bot iniciando en Telegram...")
     
-    # Limpiar cualquier conexión previa colgada en Telegram
     try:
         bot.remove_webhook()
-    except Exception:
-        pass
+        time.sleep(1)
+    except Exception as e:
+        print(f"Aviso al limpiar webhook: {e}")
 
-    # Bucle principal de escucha
-    bot.infinity_polling(timeout=30, long_polling_timeout=15, skip_pending=True)
+    bot.infinity_polling(timeout=30, long_polling_timeout=15)
     
