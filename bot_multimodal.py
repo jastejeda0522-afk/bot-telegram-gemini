@@ -72,9 +72,9 @@ VISION_MODELS = ["qwen/qwen3.8-27b"]
 chat_histories = {}
 
 SYSTEM_PROMPT = (
-    "Eres un tutor de física y matemáticas experto, cálido y sumamente ordenado. "
-    "Tu objetivo es explicar los ejercicios paso a paso de forma limpia y muy fácil de leer en pantallas de celular.\n\n"
-    "ESTRUCTURA OBLIGATORIA DE RESPUESTA:\n"
+    "Eres un tutor experto, cálido y sumamente ordenado. "
+    "Tu objetivo es explicar los ejercicios paso a paso de forma limpia, directa y muy fácil de leer en pantallas de celular.\n\n"
+    "ESTRUCTURA OBLIGATORIA DE RESPUESTA (SIN LÍNEAS SEPARADORAS --- NI CORCHETES):\n"
     "PROBLEMA\n"
     "[Planteamiento claro o datos iniciales]\n\n"
     "PASOS A SEGUIR\n"
@@ -84,34 +84,38 @@ SYSTEM_PROMPT = (
     "RESULTADO FINAL\n"
     "[Resultado destacado]\n\n"
     "RESUMEN RÁPIDO\n"
-    "- Ejercicio 1: [Resultado]\n"
-    "- Ejercicio 2: [Resultado]\n\n"
+    "- [Punto clave 1]\n"
+    "- [Punto clave 2]\n\n"
     "REGLAS ESTRICTAS DE FORMATO Y ESTILO:\n"
-    "- PROHIBIDO ABSOLUTAMENTE usar tablas de Markdown (con barras verticales | |) ya que no se entienden en el celular.\n"
-    "- PROHIBIDO usar hashtags (#) o saturar el texto con exceso de asteriscos (*).\n"
+    "- PROHIBIDO ABSOLUTAMENTE usar corchetes de LaTeX como [ , ] , \\(o\\). Escribe las matemáticas en texto lineal normal.\n"
+    "- PROHIBIDO usar líneas divisorias con guiones (---) ni hashtags (#).\n"
     "- FRACCIONES ESTÉTICAS: Utiliza caracteres de fracción Unicode (ejemplo: ½, ⅓, ¼, ¾) o la barra diagonal simple (ejemplo: 1/2).\n"
-    "- Escribe las potencias de forma sencilla (ejemplo: v_f²) y las raíces usando el símbolo √ (ejemplo: √36).\n"
+    "- Escribe las potencias de forma sencilla (ejemplo: x², t²) y las raíces usando el símbolo √ (ejemplo: √36).\n"
     "- Mantén un tono sumamente empático, didáctico y cercano."
 )
 
 def clean_latex_output(text):
-    """Filtro inteligente que formatea fracciones Unicode (½, ⅓, etc.) y elimina LaTeX y símbolos molestos."""
+    """Filtro ultra-limpio que elimina corchetes LaTeX, dólares, barras y separadores feos."""
     if not text:
         return text
     
-    # 1. Eliminar ABSOLUTAMENTE TODOS los signos de dólar
+    # 1. Eliminar signos de dólar y corchetes LaTeX de bloques o líneas
+    text = re.sub(r'\\\[\vert{}\\\]|\\\(\vert{}\\\)', '', text)
     text = re.sub(r'\$', '', text)
     
-    # 2. Convertir fracciones comunes a formato Unicode estético (½, ⅓, ¼, ¾)
+    # 2. Eliminar líneas divisorias feas con guiones (---)
+    text = re.sub(r'---+', '', text)
+    
+    # 3. Convertir fracciones comunes a formato Unicode estético (½, ⅓, ¼, ¾)
     text = re.sub(r'\b1/2\b|\(\s*1\s*\)\s*/\s*\(\s*2\s*\)|\\frac\{1\}\{2\}', '½', text)
     text = re.sub(r'\b1/3\b|\(\s*1\s*\)\s*/\s*\(\s*3\s*\)|\\frac\{1\}\{3\}', '⅓', text)
     text = re.sub(r'\b1/4\b|\(\s*1\s*\)\s*/\s*\(\s*4\s*\)|\\frac\{1\}\{4\}', '¼', text)
     text = re.sub(r'\b3/4\b|\(\s*3\s*\)\s*/\s*\(\s*4\s*\)|\\frac\{3\}\{4\}', '¾', text)
     
-    # 3. Convertir otras fracciones LaTeX tipo \frac{A}{B} a formato limpio (A / B)
+    # 4. Convertir otras fracciones LaTeX tipo \frac{A}{B} a formato limpio (A / B)
     text = re.sub(r'\\frac\{([^}]*)\}\{([^}]*)\}', r'\1/\2', text)
     
-    # 4. Corregir comandos de texto plano que el modelo deja sueltos
+    # 5. Reemplazar símbolos matemáticos comunes por texto plano legible
     text = text.replace(r'\Delta', 'Δ')
     text = text.replace(r'\sum', '∑')
     text = text.replace(r'\int', '∫')
@@ -125,7 +129,7 @@ def clean_latex_output(text):
     text = text.replace(r'\sqrt', '√')
     text = text.replace('\\text', '')
     
-    # 5. Limpiar llaves sobrantes que deja el modelo
+    # 6. Limpiar llaves sobrantes que deja el modelo
     text = re.sub(r'\{([^}]+)\}', r'\1', text)
     
     return text
