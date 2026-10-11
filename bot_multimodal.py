@@ -1,6 +1,7 @@
 import os
 import time
 import threading
+import re
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import requests
 import telebot
@@ -71,27 +72,28 @@ VISION_MODELS = ["qwen/qwen3.8-27b"]
 chat_histories = {}
 
 SYSTEM_PROMPT = (
-    "Eres un colaborador de IA personal, cálido, sumamente servicial, empático y organizado. "
-    "Tu objetivo es ayudar al usuario de forma clara, directa y estructurada.\n\n"
-    "DIRECTRICES DE COMUNICACIÓN Y FORMATO:\n"
-    "- Da los detalles más importantes siempre al inicio (upfront).\n"
-    "- Sé claro, conciso y optimiza el diseño para una lectura rápida y escaneable (evita bloques densos de texto).\n"
-    "- Utiliza negritas para enfatizar frases o palabras clave de forma juiciosa.\n"
-    "- Emplea listas con viñetas u organización clara cuando desgloses información o pasos.\n"
-    "- EVITA estrictamente responder usando tablas comparativas o formatos de doble columna (como tablas con | Pregunta | Respuesta |). Desglosa siempre la información por partes de manera explicativa y narrativa.\n"
-    "- Mantén un tono cálido, engaging, entusiasta y profundamente colaborativo.\n\n"
-    "CAPACIDADES Y MATEMÁTICAS:\n"
-    "- Tienes la capacidad plena de analizar imágenes y fotos. Si el usuario menciona que enviará una foto o imagen, confírmale de inmediato que estás listo para recibirla y analizarla.\n"
-    "- Tienes dominio avanzado en matemáticas tanto para licenciaturas (álgebra abstracta, estadística, cálculo formal) como para ingenierías (cálculo vectorial, ecuaciones diferenciales, matrices, circuitos, mecatrónica, etc.). Explica cada paso con lógica rigurosa y didáctica.\n"
-    "- Detecta de forma fluida cuando el usuario cambie de tema.\n\n"
-    "REGLAS DE FORMATO TÉCNICO Y PROHIBICIÓN DE LATEX:\n"
-    "- Responde siempre en español.\n"
-    "- ESTÁ ABSOLUTAMENTE PROHIBIDO utilizar sintaxis LaTeX (nada de signos de dólar $o$$, \\frac, \\begin, etc.).\n"
-    "- Utiliza símbolos Unicode claros y texto plano para matemáticas (ejemplos: x², √x, a / b, π, ±, ∫, ×, ÷, ∞, matrices organizadas con corchetes en línea como [ [a, b], [c, d] ])."
+    "Eres un asistente de ingeniería y mecatrónica directo, cálido y organizado. "
+    "REGLA CRITICA DE FORMATO: ESTA ABSOLUTAMENTE PROHIBIDO USAR LATEX O SIGNOS DE DOLAR ($). "
+    "Escribe todas las fórmulas, variables y operaciones usando texto plano y símbolos Unicode normales (ejemplos: v_f², √38, c_12, a / b). "
+    "Nunca respondas con tablas."
 )
 
+def clean_latex_output(text):
+    """Filtro de seguridad para remover sintaxis LaTeX y signos de dólar si el modelo desobedece."""
+    if not text:
+        return text
+    # Remover bloques de LaTeX con doble dólar $$...$$
+    text = re.sub(r'\$\$([\s\S]*?)\$\$', r'\1', text)
+    # Remover signos de dólar individuales $ ... $text = text.replace('$', '')
+    # Reemplazar comandos comunes de fracciones por texto plano estilo a / b
+    text = re.sub(r'\\frac\{([^}]*)\}\{([^}]*)\}', r'(\1 / \2)', text)
+    # Limpiar barras invertidas remanentes de comandos LaTeX comunes
+    text = text.replace('\\text', '').replace('\\sqrt', 'raiz')
+    return text
+
 def send_split_message(message, text):
-    """Maneja el límite de caracteres dividiendo la respuesta en partes y preguntando si desea continuar."""
+    """Maneja el límite de caracteres dividiendo la respuesta en partes y aplicando el filtro anti-LaTeX."""
+    text = clean_latex_output(text)
     max_length = 3500
     if len(text) <= max_length:
         try:
@@ -144,7 +146,7 @@ def call_groq_vision(prompt_text, image_url):
                     }
                 ],
                 temperature=0.7,
-                max_tokens=800,  # Respetando el límite de 1000 OTPM de Groq
+                max_tokens=800,
             )
             return response.choices[0].message.content
         except Exception as e:
@@ -239,4 +241,3 @@ if __name__ == '__main__':
         print(f"Aviso en limpieza de webhook: {e}")
 
     bot.infinity_polling(timeout=20, long_polling_timeout=10)
-        
