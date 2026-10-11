@@ -71,34 +71,41 @@ VISION_MODELS = ["qwen/qwen3.8-27b"]
 chat_histories = {}
 
 SYSTEM_PROMPT = (
-    "Eres un asistente virtual empático, claro, servicial y técnico cuando se requiere.\n\n"
-    "CAPACIDADES:\n"
-    "- Tienes la capacidad de analizar imágenes y fotos. Si el usuario te menciona que te enviará una foto o imagen, indícale amablemente que estás listo para recibirla y analizarla.\n"
-    "- Detecta cuando el usuario quiera cambiar drásticamente de tema o conversación y adáptate naturalmente a la nueva temática.\n\n"
-    "REGLAS DE FORMATO Y MATEMÁTICAS:\n"
-    "- Responde de manera bien estructurada en formato Markdown amigable en español.\n"
-    "- Sé conciso y directo al punto en tus explicaciones.\n"
-    "- NO utilices sintaxis LaTeX como $, $$, \\frac, \\begin, \\end.\n"
-    "- Utiliza símbolos Unicode claros para matemáticas (ejemplos: x², √x, a / b, π, ±, ∫, ×, ÷, ∞)."
+    "Eres un colaborador de IA personal, cálido, sumamente servicial, empático y organizado. "
+    "Tu objetivo es ayudar al usuario de forma clara, directa y estructurada.\n\n"
+    "DIRECTRICES DE COMUNICACIÓN Y FORMATO:\n"
+    "- Da los detalles más importantes siempre al inicio (upfront).\n"
+    "- Sé claro, conciso y optimiza el diseño para una lectura rápida y escaneable (evita bloques densos de texto).\n"
+    "- Utiliza negritas para enfatizar frases o palabras clave de forma juiciosa.\n"
+    "- Emplea listas con viñetas u organización clara cuando desgloses información o pasos.\n"
+    "- EVITA estrictamente responder usando tablas comparativas o formatos de doble columna (como tablas con | Pregunta | Respuesta |). Desglosa siempre la información por partes de manera explicativa y narrativa.\n"
+    "- Mantén un tono cálido, engaging, entusiasta y profundamente colaborativo.\n\n"
+    "CAPACIDADES Y MATEMÁTICAS:\n"
+    "- Tienes la capacidad plena de analizar imágenes y fotos. Si el usuario menciona que enviará una foto o imagen, confírmale de inmediato que estás listo para recibirla y analizarla.\n"
+    "- Tienes dominio avanzado en matemáticas tanto para licenciaturas (álgebra abstracta, estadística, cálculo formal) como para ingenierías (cálculo vectorial, ecuaciones diferenciales, matrices, circuitos, mecatrónica, etc.). Explica cada paso con lógica rigurosa y didáctica.\n"
+    "- Detecta de forma fluida cuando el usuario cambie de tema.\n\n"
+    "REGLAS DE FORMATO TÉCNICO:\n"
+    "- Responde siempre en español.\n"
+    "- NUNCA utilices sintaxis LaTeX (nada de $,$$, \\frac, \\begin, etc.).\n"
+    "- Utiliza símbolos Unicode claros para matemáticas (ejemplos: x², √x, a / b, π, ±, ∫, ×, ÷, ∞, matrices con corchetes)."
 )
 
 def send_split_message(message, text):
-    """Maneja el límite de 4096 caracteres de Telegram dividiendo la respuesta si es necesario."""
-    max_length = 4000
+    """Maneja el límite de caracteres dividiendo la respuesta en partes y preguntando si desea continuar."""
+    max_length = 3500
     if len(text) <= max_length:
         try:
             bot.reply_to(message, text, parse_mode="Markdown")
         except Exception:
             bot.reply_to(message, text)
     else:
-        # Dividir texto por fragmentos de máximo 4000 caracteres
         chunks = [text[i:i + max_length] for i in range(0, len(text), max_length)]
         for index, chunk in enumerate(chunks):
             try:
                 if index == 0:
-                    bot.reply_to(message, chunk, parse_mode="Markdown")
+                    bot.reply_to(message, chunk + "\n\n*(Esta respuesta es larga. ¿Estás listo para la siguiente parte?)*", parse_mode="Markdown")
                 else:
-                    bot.send_message(message.chat.id, chunk, parse_mode="Markdown")
+                    bot.send_message(message.chat.id, chunk + ("\n\n*(¿Continuamos con la siguiente parte?)*" if index < len(chunks)-1 else ""), parse_mode="Markdown")
             except Exception:
                 if index == 0:
                     bot.reply_to(message, chunk)
@@ -137,7 +144,7 @@ def call_groq_vision(prompt_text, image_url):
                     }
                 ],
                 temperature=0.7,
-                max_tokens=800,  # Ajustado a 800 para respetar el límite de 1000 OTPM de Groq
+                max_tokens=800,  # Respetando el límite de 1000 OTPM de Groq
             )
             return response.choices[0].message.content
         except Exception as e:
@@ -151,11 +158,10 @@ def call_groq_vision(prompt_text, image_url):
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     welcome_text = (
-        "¡Hola! 👋 Soy tu asistente virtual.\n\n"
-        "Puedo ayudarte con:\n"
-        "• 💬 **Consultas de texto:** Pregúntame lo que necesites.\n"
-        "• 🖼️ **Análisis de imágenes:** Envíame una foto para analizarla.\n"
-        "• 🔄 **Nuevo tema:** Usa el comando /reset para reiniciar la memoria de la conversación."
+        "¡Hola! 👋 Qué gusto saludarte. Soy tu asistente personal.\n\n"
+        "• 💬 **Texto y Matemáticas:** Resuelvo dudas de ingenierías, licenciaturas o cualquier tema.\n"
+        "• 🖼️ **Imágenes:** Envíame fotos de ejercicios o esquemas para analizarlos a detalle.\n"
+        "• 🔄 **Nuevo tema:** Usa `/reset` para limpiar el historial."
     )
     bot.reply_to(message, welcome_text, parse_mode="Markdown")
 
@@ -163,7 +169,7 @@ def send_welcome(message):
 def reset_conversation(message):
     chat_id = message.chat.id
     chat_histories[chat_id] = []
-    bot.reply_to(message, "🔄 **Tema reiniciado.** ¿En qué te puedo ayudar ahora?", parse_mode="Markdown")
+    bot.reply_to(message, "🔄 **Tema reiniciado.** ¿Qué proyecto, cálculo o duda abordamos ahora?", parse_mode="Markdown")
 
 # ---------------------------------------------------------
 # 4. Manejador de Fotos Recibidas (Visión Asíncrona)
@@ -174,7 +180,7 @@ def process_photo_async(message):
         bot.send_chat_action(chat_id, 'typing')
         file_info = bot.get_file(message.photo[-1].file_id)
         file_url = f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_info.file_path}"
-        user_prompt = message.caption if message.caption else "Describe esta imagen con detalle y resuelve el ejercicio si hay uno."
+        user_prompt = message.caption if message.caption else "Analiza esta imagen paso a paso y resuelve cualquier ejercicio o problema técnico que contenga."
 
         answer = call_groq_vision(user_prompt, file_url)
 
@@ -233,3 +239,4 @@ if __name__ == '__main__':
         print(f"Aviso en limpieza de webhook: {e}")
 
     bot.infinity_polling(timeout=20, long_polling_timeout=10)
+    
