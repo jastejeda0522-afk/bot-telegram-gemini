@@ -72,27 +72,46 @@ VISION_MODELS = ["qwen/qwen3.8-27b"]
 chat_histories = {}
 
 SYSTEM_PROMPT = (
-    "Eres un asistente de ingeniería y mecatrónica directo, cálido y organizado. "
-    "REGLA CRITICA DE FORMATO: ESTA ABSOLUTAMENTE PROHIBIDO USAR LATEX O SIGNOS DE DOLAR ($). "
-    "Escribe todas las fórmulas, variables y operaciones usando texto plano y símbolos Unicode normales (ejemplos: v_f², √38, c_12, a / b). "
-    "Nunca respondas con tablas."
+    "Eres un colaborador de IA personal, cálido, sumamente servicial, empático y organizado. "
+    "Tu objetivo es ayudar al usuario de forma clara, directa y estructurada.\n\n"
+    "DIRECTRICES DE COMUNICACIÓN Y FORMATO:\n"
+    "- Da los detalles más importantes siempre al inicio (upfront).\n"
+    "- Sé claro, conciso y optimiza el diseño para una lectura rápida y escaneable.\n"
+    "- Utiliza negritas para enfatizar frases o palabras clave de forma juiciosa.\n"
+    "- Emplea listas con viñetas u organización clara cuando desgloses información o pasos.\n"
+    "- EVITA estrictamente responder usando tablas comparativas o formatos de doble columna. Desglosa la información de manera explicativa y narrativa.\n"
+    "- Mantén un tono cálido, engaging, entusiasta y profundamente colaborativo.\n\n"
+    "REGLA ESTRICTA DE SIMBOLOGÍA MATEMÁTICA (CERO LATEX):\n"
+    "- ESTÁ ABSOLUTAMENTE PROHIBIDO utilizar sintaxis LaTeX (nada de signos de dólar $o$$, \\frac, \\begin, etc.).\n"
+    "- Utiliza siempre la simbología matemática estándar en formato Unicode puro, tal como: ∑ (sumatoria), ∫ (integral), ∬ (integral doble), ∮ (integral de línea), ∏ (productorio), ∂y/∂x (derivada parcial), d²y/dx² (derivada segunda), ∞ (infinito), √ (raíz), ± (más o menos), ≈ (aproximado), α, β, θ, λ, σ (letras griegas)[span_1](start_span)[span_1](end_span).\n"
+    "- Escribe las fracciones usando la barra inclinada simple (ejemplo: a / b) o entre paréntesis, y las matrices organizadas con corchetes en línea (ejemplo: [ [a, b], [c, d] ])."
 )
 
 def clean_latex_output(text):
-    """Filtro de seguridad para remover sintaxis LaTeX y signos de dólar si el modelo desobedece."""
+    """Filtro avanzado para limpiar LaTeX y forzar simbología Unicode estándar."""
     if not text:
         return text
-    # Remover bloques de LaTeX con doble dólar $$...$$
+    # Remover bloques de doble dólar $$...$$
     text = re.sub(r'\$\$([\s\S]*?)\$\$', r'\1', text)
     # Remover signos de dólar individuales $ ... $text = text.replace('$', '')
-    # Reemplazar comandos comunes de fracciones por texto plano estilo a / b
-    text = re.sub(r'\\frac\{([^}]*)\}\{([^}]*)\}', r'(\1 / \2)', text)
-    # Limpiar barras invertidas remanentes de comandos LaTeX comunes
-    text = text.replace('\\text', '').replace('\\sqrt', 'raiz')
+    # Convertir fracciones LaTeX tipo \frac{A}{B} a formato plano (A / B)
+    text = re.sub(r'\\frac\{([^}]*)\}\{([^}]*)\}', r'(\1) / (\2)', text)
+    # Reemplazar comandos comunes por simbología Unicode estándar
+    text = text.replace('\\sum', '∑')
+    text = text.replace('\\int', '∫')
+    text = text.replace('\\prod', '∏')
+    text = text.replace('\\partial', '∂')
+    text = text.replace('\\infty', '∞')
+    text = text.replace('\\pm', '±')
+    text = text.replace('\\approx', '≈')
+    text = text.replace('\\cdot', '×')
+    text = text.replace('\\times', '×')
+    text = text.replace('\\sqrt', '√')
+    text = text.replace('\\text', '')
     return text
 
 def send_split_message(message, text):
-    """Maneja el límite de caracteres dividiendo la respuesta en partes y aplicando el filtro anti-LaTeX."""
+    """Maneja el límite de caracteres dividiendo la respuesta en partes y aplicando el filtro Unicode."""
     text = clean_latex_output(text)
     max_length = 3500
     if len(text) <= max_length:
