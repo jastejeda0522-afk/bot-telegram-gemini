@@ -286,5 +286,5 @@ if __name__ == '__main__':
     except Exception as e:
         print(f"Aviso al limpiar webhook: {e}")
 
-    bot.infinity_polling(timeout=30, long_polling_timeout=15)
-                     
+    bot.infinity_polling(skip_pending=True, timeout=30, long_polling_timeout=15)
+        
