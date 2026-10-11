@@ -109,15 +109,15 @@ def clean_latex_output(text):
     text = text.replace(r'\cdot', '×')
     text = text.replace(r'\times', '×')
     text = text.replace(r'\sqrt', '√')
-    text = text.replace(r'\text', '')
+    text = text.replace('\\text', '')
     
-    # 5. Limpiar llaves sobrantes que deja el modelo (ej: {kg} -> kg)
+    # 5. Limpiar llaves sobrantes que deja el modelo
     text = re.sub(r'\{([^}]+)\}', r'\1', text)
     
     return text
 
 def send_split_message(message, text):
-    """Maneja el límite de caracteres dividiendo la respuesta en partes y aplicando el filtro."""
+    """Maneja el límite de caracteres dividiendo la respuesta en partes y preguntando si desea continuar."""
     text = clean_latex_output(text)
     max_length = 3500
     if len(text) <= max_length:
@@ -147,7 +147,7 @@ def call_groq_text(messages_payload):
                 model=model_name,
                 messages=messages_payload,
                 temperature=0.7,
-                max_tokens=1500,
+                max_tokens=3000,  # Aumentado para evitar cortes a mitad de respuesta
             )
             return response.choices[0].message.content
         except Exception as e:
@@ -171,7 +171,7 @@ def call_groq_vision(prompt_text, image_url):
                     }
                 ],
                 temperature=0.7,
-                max_tokens=800,
+                max_tokens=2000,  # Aumentado para visión
             )
             return response.choices[0].message.content
         except Exception as e:
@@ -260,10 +260,13 @@ def handle_text(message):
 # ---------------------------------------------------------
 if __name__ == '__main__':
     print("Bot iniciando en Telegram...")
+    
+    # Limpiar cualquier conexión previa colgada en Telegram
     try:
-        bot.delete_webhook(drop_pending_updates=True)
-    except Exception as e:
-        print(f"Aviso en limpieza de webhook: {e}")
+        bot.remove_webhook()
+    except Exception:
+        pass
 
-    bot.infinity_polling(timeout=20, long_polling_timeout=10)
+    # Bucle principal de escucha
+    bot.infinity_polling(timeout=30, long_polling_timeout=15, skip_pending=True)
     
