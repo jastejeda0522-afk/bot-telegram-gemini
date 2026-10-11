@@ -74,7 +74,7 @@ chat_histories = {}
 SYSTEM_PROMPT = (
     "Eres un tutor experto, cálido y sumamente ordenado. "
     "Tu objetivo es explicar los ejercicios paso a paso de forma limpia, directa y muy fácil de leer en pantallas de celular.\n\n"
-    "ESTRUCTURA OBLIGATORIA DE RESPUESTA (SIN LÍNEAS SEPARADORAS --- NI CORCHETES):\n"
+    "ESTRUCTURA OBLIGATORIA DE RESPUESTA (SIN LÍNEAS SEPARADORAS ---):\n"
     "PROBLEMA\n"
     "[Planteamiento claro o datos iniciales]\n\n"
     "PASOS A SEGUIR\n"
@@ -87,7 +87,8 @@ SYSTEM_PROMPT = (
     "- [Punto clave 1]\n"
     "- [Punto clave 2]\n\n"
     "REGLAS ESTRICTAS DE FORMATO Y ESTILO:\n"
-    "- PROHIBIDO ABSOLUTAMENTE usar corchetes de LaTeX como [ , ] , \\(o\\). Escribe las matemáticas en texto lineal normal.\n"
+    "- PROHIBIDO ABSOLUTAMENTE usar LaTeX complejo o comandos como \\begin{matrix}. \n"
+    "- USO DE CORCHETES: Emplea corchetes reales [ ] cuando sea necesario en ejercicios matemáticos, como para representar matrices en renglones separados o agrupar operaciones que lo requieran.\n"
     "- PROHIBIDO usar líneas divisorias con guiones (---) ni hashtags (#).\n"
     "- FRACCIONES ESTÉTICAS: Utiliza caracteres de fracción Unicode (ejemplo: ½, ⅓, ¼, ¾) o la barra diagonal simple (ejemplo: 1/2).\n"
     "- Escribe las potencias de forma sencilla (ejemplo: x², t²) y las raíces usando el símbolo √ (ejemplo: √36).\n"
@@ -95,12 +96,12 @@ SYSTEM_PROMPT = (
 )
 
 def clean_latex_output(text):
-    """Filtro ultra-limpio que elimina corchetes LaTeX, dólares, barras y separadores feos."""
+    """Filtro ultra-limpio que elimina LaTeX pesado pero preserva corchetes matemáticos necesarios."""
     if not text:
         return text
     
-    # 1. Eliminar signos de dólar y corchetes LaTeX de bloques o líneas
-    text = re.sub(r'\\\[\vert{}\\\]|\\\(\vert{}\\\)', '', text)
+    # 1. Eliminar solo los comandos de bloques LaTeX complejos, preservando corchetes reales de texto
+    text = re.sub(r'\\begin\{[a-z]*\*?\}|\\end\{[a-z]*\*?\}', '', text)
     text = re.sub(r'\$', '', text)
     
     # 2. Eliminar líneas divisorias feas con guiones (---)
@@ -286,4 +287,4 @@ if __name__ == '__main__':
         print(f"Aviso al limpiar webhook: {e}")
 
     bot.infinity_polling(timeout=30, long_polling_timeout=15)
-    
+                     
