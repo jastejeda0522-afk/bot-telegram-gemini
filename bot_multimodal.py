@@ -90,8 +90,8 @@ SYSTEM_PROMPT = (
     "- PROHIBIDO ABSOLUTAMENTE usar LaTeX o comandos como \\lim, \\to, \\displaystyle, etc. Escribe todo en texto lineal normal.\n"
     "- USO DE CORCHETES: Emplea corchetes reales [ ] cuando sea necesario en ejercicios matemáticos, como para representar matrices en renglones separados.\n"
     "- PROHIBIDO usar líneas divisorias con guiones (---) ni hashtags (#).\n"
-    "- FRACCIONES ESTÉTICAS: Utiliza caracteres de fracción Unicode (ejemplo: ½, ⅓, ¼, ¾) o la barra diagonal simple (ejemplo: 1/2).\n"
-    "- Escribe las potencias de forma sencilla (ejemplo: x², t²) y las raíces usando el símbolo √ (ejemplo: √36).\n"
+    "- SÍNTESIS EFICIENTE: Sé directo y fluido para que la respuesta quepa completa y sin cortes dentro de los límites de la IA.\n"
+    "- FRACCIONES Y SÍMBOLOS: Utiliza caracteres de fracción Unicode (½, ⅓, ¼, ¾) o barras simples, potencias sencillas (x²) y raíces con √.\n"
     "- Mantén un tono sumamente empático, didáctico y cercano."
 )
 
@@ -156,92 +156,44 @@ def send_split_message(message, text):
                     bot.send_message(message.chat.id, chunk)
 
 def call_groq_text(messages_payload):
-    """Genera texto y continúa automáticamente si la respuesta excede el límite de tokens."""
-    full_content = ""
-    current_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + list(messages_payload)
-    
-    for _ in range(3):  # Máximo 3 partes de continuación automática
-        response = None
-        last_exception = None
-        for model_name in TEXT_MODELS:
-            try:
-                resp = groq_client.chat.completions.create(
-                    model=model_name,
-                    messages=current_messages,
-                    temperature=0.7,
-                    max_tokens=800,  # Seguro para el límite de Groq
-                )
-                response = resp
-                break
-            except Exception as e:
-                last_exception = e
-                print(f"Advertencia: Modelo {model_name} falló: {str(e)}")
-        
-        if not response:
-            if full_content:
-                return full_content
-            raise last_exception
-            
-        choice = response.choices[0]
-        content_chunk = choice.message.content or ""
-        full_content += content_chunk
-        
-        # Si se cortó por llegar al límite de tokens, pedimos que continúe
-        if getattr(choice, 'finish_reason', None) == 'length':
-            current_messages.append({"role": "assistant", "content": content_chunk})
-            current_messages.append({"role": "user", "content": "Continúa exactamente desde donde te quedaste, sin repetir lo anterior."})
-        else:
-            break
-            
-    return full_content
+    last_exception = None
+    for model_name in TEXT_MODELS:
+        try:
+            response = groq_client.chat.completions.create(
+                model=model_name,
+                messages=messages_payload,
+                temperature=0.7,
+                max_tokens=2000,
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            last_exception = e
+            print(f"Advertencia: Modelo {model_name} falló: {str(e)}")
+    raise last_exception
 
 def call_groq_vision(prompt_text, image_url):
-    """Analiza imágenes y continúa automáticamente si la respuesta excede el límite de tokens."""
-    full_content = ""
-    messages = [
-        {
-            "role": "user",
-            "content": [
-                {"type": "text", "text": f"{SYSTEM_PROMPT}\n\n{prompt_text}"},
-                {"type": "image_url", "image_url": {"url": image_url}}
-            ]
-        }
-    ]
-    
-    for _ in range(3):  # Máximo 3 partes de continuación automática
-        response = None
-        last_exception = None
-        for model_name in VISION_MODELS:
-            try:
-                resp = groq_client.chat.completions.create(
-                    model=model_name,
-                    messages=messages,
-                    temperature=0.7,
-                    max_tokens=800,  # Seguro para el límite de Groq
-                )
-                response = resp
-                break
-            except Exception as e:
-                last_exception = e
-                print(f"Advertencia: Modelo de visión {model_name} falló: {str(e)}")
-        
-        if not response:
-            if full_content:
-                return full_content
-            raise last_exception
-            
-        choice = response.choices[0]
-        content_chunk = choice.message.content or ""
-        full_content += content_chunk
-        
-        # Si se cortó por llegar al límite de tokens, pedimos continuación
-        if getattr(choice, 'finish_reason', None) == 'length':
-            messages.append({"role": "assistant", "content": content_chunk})
-            messages.append({"role": "user", "content": "Continúa exactamente desde donde te quedaste con la explicación, sin repetir lo anterior."})
-        else:
-            break
-            
-    return full_content
+    last_exception = None
+    for model_name in VISION_MODELS:
+        try:
+            response = groq_client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": f"{SYSTEM_PROMPT}\n\n{prompt_text}"},
+                            {"type": "image_url", "image_url": {"url": image_url}}
+                        ]
+                    }
+                ],
+                temperature=0.7,
+                max_tokens=700,  # Valor seguro y estable para evitar bloqueos por límites de Groq
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            last_exception = e
+            print(f"Advertencia: Modelo de visión {model_name} falló: {str(e)}")
+    raise last_exception
 
 # ---------------------------------------------------------
 # 3. Manejadores de Comandos
@@ -306,8 +258,10 @@ def handle_text(message):
     chat_histories[chat_id].append({"role": "user", "content": text})
     chat_histories[chat_id] = chat_histories[chat_id][-14:]
 
+    payload = [{"role": "system", "content": SYSTEM_PROMPT}] + chat_histories[chat_id]
+
     try:
-        answer = call_groq_text(chat_histories[chat_id])
+        answer = call_groq_text(payload)
         
         chat_histories[chat_id].append({"role": "assistant", "content": answer})
         chat_histories[chat_id] = chat_histories[chat_id][-14:]
@@ -335,3 +289,4 @@ if __name__ == '__main__':
         except Exception as e:
             print(f"[Aviso Polling] {e}. Reintentando conexión en 5 segundos...")
             time.sleep(5)
+        
