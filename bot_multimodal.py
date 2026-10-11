@@ -1,4 +1,3 @@
-
 import os
 import time
 import threading
@@ -79,37 +78,41 @@ SYSTEM_PROMPT = (
     "- Ve directo al grano: da el resultado o fórmula clave al inicio.\n"
     "- Usa viñetas claras y cortas. NUNCA dejes sangrías excesivas ni bloques de texto amontonados.\n"
     "- PROHIBIDO usar LaTeX, signos de dólar ($) o barras invertidas.\n"
-    "- MATEMÁTICAS CLARAS: En lugar de escribir fracciones feas como (1) / (2), utiliza siempre números decimales (ejemplo: 0.5) o fracciones compactas en línea (ejemplo: 1/2).\n"
-    "- Escribe las potencias de forma sencilla (ejemplo: v_f² o v_f^2) y las raíces usando el símbolo claro √ (ejemplo: √36).\n"
+    "- MANEJO DE FRACCIONES Y DECIMALES: Por defecto, utiliza fracciones limpias en línea (ejemplo: 1/2 o a / b). Si el usuario te pide explícitamente decimales en su pregunta, convierte los resultados a números decimales.\n"
+    "- Escribe las potencias de forma sencilla (ejemplo: v_f²) y las raíces usando el símbolo claro √ (ejemplo: √36).\n"
     "- Mantén un tono sumamente empático, didáctico y cercano."
 )
 
 def clean_latex_output(text):
-    """Filtro ultra-agresivo para eliminar cualquier rastro de LaTeX, dólares y llaves sobrantes."""
+    """Filtro inteligente que estandariza las fracciones feas a formato limpio y elimina LaTeX."""
     if not text:
         return text
     
-    # 1. Eliminar ABSOLUTAMENTE TODOS los signos de dólar del texto
+    # 1. Eliminar ABSOLUTAMENTE TODOS los signos de dólar
     text = re.sub(r'\$', '', text)
     
-    # 2. Convertir fracciones LaTeX tipo \frac{A}{B} a un formato limpio (A / B)
-    text = re.sub(r'\\frac\{([^}]*)\}\{([^}]*)\}', r'(\1) / (\2)', text)
+    # 2. Convertir fracciones feas tipo (1) / (2) a formato compacto limpio (1/2)
+    text = re.sub(r'\(\s*1\s*\)\s*/\s*\(\s*2\s*\)', '1/2', text)
     
-    # 3. Limpiar llaves sobrantes que deja el modelo (ej: 10{ kg} -> 10 kg)
+    # 3. Convertir fracciones LaTeX tipo \frac{A}{B} a formato limpio (A / B)
+    text = re.sub(r'\\frac\{([^}]*)\}\{([^}]*)\}', r'\1/\2', text)
+    
+    # 4. Corregir comandos de texto plano que el modelo deja sueltos
+    text = text.replace(r'\Delta', 'Δ')
+    text = text.replace(r'\sum', '∑')
+    text = text.replace(r'\int', '∫')
+    text = text.replace(r'\prod', '∏')
+    text = text.replace(r'\partial', '∂')
+    text = text.replace(r'\infty', '∞')
+    text = text.replace(r'\pm', '±')
+    text = text.replace(r'\approx', '≈')
+    text = text.replace(r'\cdot', '×')
+    text = text.replace(r'\times', '×')
+    text = text.replace(r'\sqrt', '√')
+    text = text.replace(r'\text', '')
+    
+    # 5. Limpiar llaves sobrantes que deja el modelo (ej: {kg} -> kg)
     text = re.sub(r'\{([^}]+)\}', r'\1', text)
-    
-    # 4. Reemplazar comandos comunes por simbología Unicode limpia
-    text = text.replace('\\sum', '∑')
-    text = text.replace('\\int', '∫')
-    text = text.replace('\\prod', '∏')
-    text = text.replace('\\partial', '∂')
-    text = text.replace('\\infty', '∞')
-    text = text.replace('\\pm', '±')
-    text = text.replace('\\approx', '≈')
-    text = text.replace('\\cdot', '×')
-    text = text.replace('\\times', '×')
-    text = text.replace('\\sqrt', '√')
-    text = text.replace('\\text', '')
     
     return text
 
@@ -263,3 +266,4 @@ if __name__ == '__main__':
         print(f"Aviso en limpieza de webhook: {e}")
 
     bot.infinity_polling(timeout=20, long_polling_timeout=10)
+    
