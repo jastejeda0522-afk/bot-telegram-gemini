@@ -275,7 +275,7 @@ def handle_text(message):
         bot.reply_to(message, f"Ocurrió un error al procesar la solicitud: {str(e)}")
 
 # ---------------------------------------------------------
-# 6. Inicio del Bucle Polling
+# 6. Inicio del Bucle Polling con Protección Anti-Conflictos
 # ---------------------------------------------------------
 if __name__ == '__main__':
     print("Bot iniciando en Telegram...")
@@ -286,5 +286,10 @@ if __name__ == '__main__':
     except Exception as e:
         print(f"Aviso al limpiar webhook: {e}")
 
-    bot.infinity_polling(skip_pending=True, timeout=30, long_polling_timeout=15)
-        
+    while True:
+        try:
+            bot.infinity_polling(skip_pending=True, timeout=30, long_polling_timeout=15)
+        except Exception as e:
+            print(f"[Aviso Polling] {e}. Reintentando conexión en 5 segundos...")
+            time.sleep(5)
+    
