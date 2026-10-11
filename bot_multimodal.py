@@ -78,23 +78,26 @@ SYSTEM_PROMPT = (
     "- Ve directo al grano: da el resultado o fórmula clave al inicio.\n"
     "- Usa viñetas claras y cortas. NUNCA dejes sangrías excesivas ni bloques de texto amontonados.\n"
     "- PROHIBIDO usar LaTeX, signos de dólar ($) o barras invertidas.\n"
-    "- MANEJO DE FRACCIONES Y DECIMALES: Por defecto, utiliza fracciones limpias en línea (ejemplo: 1/2 o a / b). Si el usuario te pide explícitamente decimales en su pregunta, convierte los resultados a números decimales.\n"
+    "- FRACCIONES ESTÉTICAS: Utiliza siempre caracteres de fracción limpia en Unicode cuando sea posible (ejemplo: ½, ⅓, ¼, ¾) o la barra diagonal simple (ejemplo: 1/2).\n"
     "- Escribe las potencias de forma sencilla (ejemplo: v_f²) y las raíces usando el símbolo claro √ (ejemplo: √36).\n"
     "- Mantén un tono sumamente empático, didáctico y cercano."
 )
 
 def clean_latex_output(text):
-    """Filtro inteligente que estandariza las fracciones feas a formato limpio y elimina LaTeX."""
+    """Filtro inteligente que formatea fracciones Unicode (½, ⅓, etc.) y elimina LaTeX."""
     if not text:
         return text
     
     # 1. Eliminar ABSOLUTAMENTE TODOS los signos de dólar
     text = re.sub(r'\$', '', text)
     
-    # 2. Convertir fracciones feas tipo (1) / (2) a formato compacto limpio (1/2)
-    text = re.sub(r'\(\s*1\s*\)\s*/\s*\(\s*2\s*\)', '1/2', text)
+    # 2. Convertir fracciones comunes a formato Unicode estético (½, ⅓, ¼, ¾)
+    text = re.sub(r'\b1/2\b|\(\s*1\s*\)\s*/\s*\(\s*2\s*\)|\\frac\{1\}\{2\}', '½', text)
+    text = re.sub(r'\b1/3\b|\(\s*1\s*\)\s*/\s*\(\s*3\s*\)|\\frac\{1\}\{3\}', '⅓', text)
+    text = re.sub(r'\b1/4\b|\(\s*1\s*\)\s*/\s*\(\s*4\s*\)|\\frac\{1\}\{4\}', '¼', text)
+    text = re.sub(r'\b3/4\b|\(\s*3\s*\)\s*/\s*\(\s*4\s*\)|\\frac\{3\}\{4\}', '¾', text)
     
-    # 3. Convertir fracciones LaTeX tipo \frac{A}{B} a formato limpio (A / B)
+    # 3. Convertir otras fracciones LaTeX tipo \frac{A}{B} a formato limpio (A / B)
     text = re.sub(r'\\frac\{([^}]*)\}\{([^}]*)\}', r'\1/\2', text)
     
     # 4. Corregir comandos de texto plano que el modelo deja sueltos
@@ -119,7 +122,7 @@ def clean_latex_output(text):
 def send_split_message(message, text):
     """Maneja el límite de caracteres dividiendo la respuesta en partes de forma limpia."""
     text = clean_latex_output(text)
-    max_length = 4000
+    max_length = 3500
     if len(text) <= max_length:
         try:
             bot.reply_to(message, text, parse_mode="Markdown")
@@ -147,7 +150,7 @@ def call_groq_text(messages_payload):
                 model=model_name,
                 messages=messages_payload,
                 temperature=0.7,
-                max_tokens=4000,  # Ampliado para permitir respuestas extensas completas
+                max_tokens=3000,
             )
             return response.choices[0].message.content
         except Exception as e:
@@ -171,7 +174,7 @@ def call_groq_vision(prompt_text, image_url):
                     }
                 ],
                 temperature=0.7,
-                max_tokens=3000,
+                max_tokens=1500,  # Ajustado de manera segura para evitar error 429
             )
             return response.choices[0].message.content
         except Exception as e:
@@ -268,4 +271,3 @@ if __name__ == '__main__':
         print(f"Aviso al limpiar webhook: {e}")
 
     bot.infinity_polling(timeout=30, long_polling_timeout=15)
-    
