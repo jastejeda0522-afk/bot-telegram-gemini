@@ -100,17 +100,13 @@ def clean_latex_output(text):
     if not text:
         return text
     
-    # 1. Eliminar contenedores LaTeX de bloque y línea
     text = re.sub(r'\\\[\vert{}\\\]|\\\(\vert{}\\\)', '', text)
     text = re.sub(r'\$', '', text)
     text = re.sub(r'\\begin\{[a-z]*\*?\}|\\end\{[a-z]*\*?\}', '', text)
-    
-    # 2. Eliminar comandos basura comunes de LaTeX que el modelo insiste en poner
     text = re.sub(r'\\displaystyle', '', text)
     text = re.sub(r'\\left|\\right', '', text)
     text = re.sub(r'---+', '', text)
     
-    # 3. Traducir comandos matemáticos comunes a texto plano legible al instante
     text = re.sub(r'\\lim_\{([^}]+)\}', r'lim \1', text)
     text = re.sub(r'\\lim', 'lim', text)
     text = re.sub(r'\\to', '→', text)
@@ -128,22 +124,16 @@ def clean_latex_output(text):
     text = re.sub(r'\\sqrt', '√', text)
     text = re.sub(r'\\text\{([^}]+)\}', r'\1', text)
     
-    # 4. Convertir fracciones comunes a formato Unicode estético (½, ⅓, ¼, ¾)
     text = re.sub(r'\b1/2\b|\(\s*1\s*\)\s*/\s*\(\s*2\s*\)|\\frac\{1\}\{2\}', '½', text)
     text = re.sub(r'\b1/3\b|\(\s*1\s*\)\s*/\s*\(\s*3\s*\)|\\frac\{1\}\{3\}', '⅓', text)
     text = re.sub(r'\b1/4\b|\(\s*1\s*\)\s*/\s*\(\s*4\s*\)|\\frac\{1\}\{4\}', '¼', text)
     text = re.sub(r'\b3/4\b|\(\s*3\s*\)\s*/\s*\(\s*4\s*\)|\\frac\{3\}\{4\}', '¾', text)
-    
-    # 5. Convertir cualquier otra fracción \frac{A}{B} a formato (A / B)
     text = re.sub(r'\\frac\{([^}]*)\}\{([^}]*)\}', r'(\1 / \2)', text)
-    
-    # 6. Limpiar llaves sobrantes que dejen los comandos eliminados
     text = re.sub(r'\{([^}]+)\}', r'\1', text)
     
     return text
 
 def send_split_message(message, text):
-    """Maneja el límite de caracteres dividiendo la respuesta en partes de forma limpia."""
     text = clean_latex_output(text)
     max_length = 3500
     if len(text) <= max_length:
@@ -197,7 +187,7 @@ def call_groq_vision(prompt_text, image_url):
                     }
                 ],
                 temperature=0.7,
-                max_tokens=1500,
+                max_tokens=800,  # Ajustado para respetar el límite de 1000 OTPM en Groq
             )
             return response.choices[0].message.content
         except Exception as e:
@@ -299,3 +289,4 @@ if __name__ == '__main__':
         except Exception as e:
             print(f"[Aviso Polling] {e}. Reintentando conexión en 5 segundos...")
             time.sleep(5)
+                             
