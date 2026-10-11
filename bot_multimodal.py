@@ -87,8 +87,8 @@ SYSTEM_PROMPT = (
     "- [Punto clave 1]\n"
     "- [Punto clave 2]\n\n"
     "REGLAS ESTRICTAS DE FORMATO Y ESTILO:\n"
-    "- PROHIBIDO ABSOLUTAMENTE usar LaTeX complejo o comandos como \\begin{matrix}. \n"
-    "- USO DE CORCHETES: Emplea corchetes reales [ ] cuando sea necesario en ejercicios matemáticos, como para representar matrices en renglones separados o agrupar operaciones que lo requieran.\n"
+    "- PROHIBIDO ABSOLUTAMENTE usar LaTeX o comandos como \\lim, \\to, \\displaystyle, etc. Escribe todo en texto lineal normal.\n"
+    "- USO DE CORCHETES: Emplea corchetes reales [ ] cuando sea necesario en ejercicios matemáticos, como para representar matrices en renglones separados.\n"
     "- PROHIBIDO usar líneas divisorias con guiones (---) ni hashtags (#).\n"
     "- FRACCIONES ESTÉTICAS: Utiliza caracteres de fracción Unicode (ejemplo: ½, ⅓, ¼, ¾) o la barra diagonal simple (ejemplo: 1/2).\n"
     "- Escribe las potencias de forma sencilla (ejemplo: x², t²) y las raíces usando el símbolo √ (ejemplo: √36).\n"
@@ -96,41 +96,48 @@ SYSTEM_PROMPT = (
 )
 
 def clean_latex_output(text):
-    """Filtro ultra-limpio que elimina LaTeX pesado pero preserva corchetes matemáticos necesarios."""
+    """Filtro ultra-agresivo que destruye cualquier rastro de LaTeX en el primer intento."""
     if not text:
         return text
     
-    # 1. Eliminar solo los comandos de bloques LaTeX complejos, preservando corchetes reales de texto
-    text = re.sub(r'\\begin\{[a-z]*\*?\}|\\end\{[a-z]*\*?\}', '', text)
+    # 1. Eliminar contenedores LaTeX de bloque y línea
+    text = re.sub(r'\\\[\vert{}\\\]|\\\(\vert{}\\\)', '', text)
     text = re.sub(r'\$', '', text)
+    text = re.sub(r'\\begin\{[a-z]*\*?\}|\\end\{[a-z]*\*?\}', '', text)
     
-    # 2. Eliminar líneas divisorias feas con guiones (---)
+    # 2. Eliminar comandos basura comunes de LaTeX que el modelo insiste en poner
+    text = re.sub(r'\\displaystyle', '', text)
+    text = re.sub(r'\\left|\\right', '', text)
     text = re.sub(r'---+', '', text)
     
-    # 3. Convertir fracciones comunes a formato Unicode estético (½, ⅓, ¼, ¾)
+    # 3. Traducir comandos matemáticos comunes a texto plano legible al instante
+    text = re.sub(r'\\lim_\{([^}]+)\}', r'lim \1', text)
+    text = re.sub(r'\\lim', 'lim', text)
+    text = re.sub(r'\\to', '→', text)
+    text = re.sub(r'\\Delta', 'Δ', text)
+    text = re.sub(r'\\sum', '∑', text)
+    text = re.sub(r'\\int', '∫', text)
+    text = re.sub(r'\\prod', '∏', text)
+    text = re.sub(r'\\partial', '∂', text)
+    text = re.sub(r'\\infty', '∞', text)
+    text = re.sub(r'\\pm', '±', text)
+    text = re.sub(r'\\approx', '≈', text)
+    text = re.sub(r'\\cdot', '×', text)
+    text = re.sub(r'\\times', '×', text)
+    text = re.sub(r'\\sqrt\{([^}]+)\}', r'√\1', text)
+    text = re.sub(r'\\sqrt', '√', text)
+    text = re.sub(r'\\text\{([^}]+)\}', r'\1', text)
+    
+    # 4. Convertir fracciones comunes a formato Unicode estético (½, ⅓, ¼, ¾)
     text = re.sub(r'\b1/2\b|\(\s*1\s*\)\s*/\s*\(\s*2\s*\)|\\frac\{1\}\{2\}', '½', text)
     text = re.sub(r'\b1/3\b|\(\s*1\s*\)\s*/\s*\(\s*3\s*\)|\\frac\{1\}\{3\}', '⅓', text)
     text = re.sub(r'\b1/4\b|\(\s*1\s*\)\s*/\s*\(\s*4\s*\)|\\frac\{1\}\{4\}', '¼', text)
     text = re.sub(r'\b3/4\b|\(\s*3\s*\)\s*/\s*\(\s*4\s*\)|\\frac\{3\}\{4\}', '¾', text)
     
-    # 4. Convertir otras fracciones LaTeX tipo \frac{A}{B} a formato limpio (A / B)
-    text = re.sub(r'\\frac\{([^}]*)\}\{([^}]*)\}', r'\1/\2', text)
+    # 5. Convertir cualquier otra fracción \frac{A}{B} a formato (A / B)
+    text = re.sub(r'\\frac\{([^}]*)\}\{([^}]*)\}', r'(\1 / \2)', text)
     
-    # 5. Reemplazar símbolos matemáticos comunes por texto plano legible
-    text = text.replace(r'\Delta', 'Δ')
-    text = text.replace(r'\sum', '∑')
-    text = text.replace(r'\int', '∫')
-    text = text.replace(r'\prod', '∏')
-    text = text.replace(r'\partial', '∂')
-    text = text.replace(r'\infty', '∞')
-    text = text.replace(r'\pm', '±')
-    text = text.replace(r'\approx', '≈')
-    text = text.replace(r'\cdot', '×')
-    text = text.replace(r'\times', '×')
-    text = text.replace(r'\sqrt', '√')
-    text = text.replace('\\text', '')
-    
-    # 6. Limpiar llaves sobrantes que deja el modelo
+    # 6. Limpiar llaves sobrantes que dejen los comandos eliminados
     text = re.sub(r'\{([^}]+)\}', r'\1', text)
     
     return text
@@ -215,7 +222,7 @@ def send_welcome(message):
 def reset_conversation(message):
     chat_id = message.chat.id
     chat_histories[chat_id] = []
-    bot.reply_to(message, "🔄 **Tema reiniciado.** ¿Qué proyecto, cálculo o duda abordamos ahora?", parse_mode="Markdown")
+    bot.reply_to(message, "🔄 **Tema reiniciado.** ¿Qué cálculo o duda abordamos ahora?", parse_mode="Markdown")
 
 # ---------------------------------------------------------
 # 4. Manejador de Fotos Recibidas (Visión Asíncrona)
@@ -292,4 +299,3 @@ if __name__ == '__main__':
         except Exception as e:
             print(f"[Aviso Polling] {e}. Reintentando conexión en 5 segundos...")
             time.sleep(5)
-    
