@@ -83,20 +83,25 @@ SYSTEM_PROMPT = (
     "- Mantén un tono cálido, engaging, entusiasta y profundamente colaborativo.\n\n"
     "REGLA ESTRICTA DE SIMBOLOGÍA MATEMÁTICA (CERO LATEX):\n"
     "- ESTÁ ABSOLUTAMENTE PROHIBIDO utilizar sintaxis LaTeX (nada de signos de dólar $o$$, \\frac, \\begin, etc.).\n"
-    "- Utiliza siempre la simbología matemática estándar en formato Unicode puro, tal como: ∑ (sumatoria), ∫ (integral), ∬ (integral doble), ∮ (integral de línea), ∏ (productorio), ∂y/∂x (derivada parcial), d²y/dx² (derivada segunda), ∞ (infinito), √ (raíz), ± (más o menos), ≈ (aproximado), α, β, θ, λ, σ (letras griegas)[span_1](start_span)[span_1](end_span).\n"
+    "- Utiliza siempre la simbología matemática estándar en formato Unicode puro, tal como: ∑ (sumatoria), ∫ (integral), ∬ (integral doble), ∮ (integral de línea), ∏ (productorio), ∂y/∂x (derivada parcial), d²y/dx² (derivada segunda), ∞ (infinito), √ (raíz), ± (más o menos), ≈ (aproximado), α, β, θ, λ, σ (letras griegas).\n"
     "- Escribe las fracciones usando la barra inclinada simple (ejemplo: a / b) o entre paréntesis, y las matrices organizadas con corchetes en línea (ejemplo: [ [a, b], [c, d] ])."
 )
 
 def clean_latex_output(text):
-    """Filtro avanzado para limpiar LaTeX y forzar simbología Unicode estándar."""
+    """Filtro ultra-agresivo para eliminar cualquier rastro de LaTeX, dólares y llaves sobrantes."""
     if not text:
         return text
-    # Remover bloques de doble dólar $$...$$
-    text = re.sub(r'\$\$([\s\S]*?)\$\$', r'\1', text)
-    # Remover signos de dólar individuales $ ... $text = text.replace('$', '')
-    # Convertir fracciones LaTeX tipo \frac{A}{B} a formato plano (A / B)
+    
+    # 1. Eliminar ABSOLUTAMENTE TODOS los signos de dólar del texto
+    text = re.sub(r'\$', '', text)
+    
+    # 2. Convertir fracciones LaTeX tipo \frac{A}{B} a un formato limpio (A / B)
     text = re.sub(r'\\frac\{([^}]*)\}\{([^}]*)\}', r'(\1) / (\2)', text)
-    # Reemplazar comandos comunes por simbología Unicode estándar
+    
+    # 3. Limpiar llaves sobrantes que deja el modelo (ej: 10{ kg} -> 10 kg)
+    text = re.sub(r'\{([^}]+)\}', r'\1', text)
+    
+    # 4. Reemplazar comandos comunes por simbología Unicode limpia
     text = text.replace('\\sum', '∑')
     text = text.replace('\\int', '∫')
     text = text.replace('\\prod', '∏')
@@ -108,6 +113,7 @@ def clean_latex_output(text):
     text = text.replace('\\times', '×')
     text = text.replace('\\sqrt', '√')
     text = text.replace('\\text', '')
+    
     return text
 
 def send_split_message(message, text):
