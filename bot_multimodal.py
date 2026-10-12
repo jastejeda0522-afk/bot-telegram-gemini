@@ -98,7 +98,7 @@ SYSTEM_PROMPT = (
 def clean_latex_output(text):
     """Filtro ultra-agresivo que destruye cualquier rastro de LaTeX en el primer intento."""
     if not text:
-        return text
+        return ""
     
     text = re.sub(r'\\\[\vert{}\\\]|\\\(\vert{}\\\)', '', text)
     text = re.sub(r'\$', '', text)
@@ -134,15 +134,19 @@ def clean_latex_output(text):
     return text
 
 def send_split_message(message, text):
-    text = clean_latex_output(text)
+    """Envía el mensaje asegurando que nunca esté vacío para evitar errores 400 de Telegram."""
+    cleaned = clean_latex_output(text)
+    if not cleaned or not cleaned.strip():
+        cleaned = "Lo siento, ocurrió un problema al formatear la respuesta. Inténtalo de nuevo."
+        
     max_length = 3500
-    if len(text) <= max_length:
+    if len(cleaned) <= max_length:
         try:
-            bot.reply_to(message, text, parse_mode="Markdown")
+            bot.reply_to(message, cleaned, parse_mode="Markdown")
         except Exception:
-            bot.reply_to(message, text)
+            bot.reply_to(message, cleaned)
     else:
-        chunks = [text[i:i + max_length] for i in range(0, len(text), max_length)]
+        chunks = [cleaned[i:i + max_length] for i in range(0, len(cleaned), max_length)]
         for index, chunk in enumerate(chunks):
             try:
                 if index == 0:
@@ -156,11 +160,10 @@ def send_split_message(message, text):
                     bot.send_message(message.chat.id, chunk)
 
 def call_groq_text(messages_payload):
-    """Genera texto y continúa automáticamente de forma interna si la respuesta excede el límite de tokens."""
     full_content = ""
     current_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + list(messages_payload)
     
-    for _ in range(3):  # Permite hasta 3 fragmentos de continuación automática
+    for _ in range(3):
         response = None
         last_exception = None
         for model_name in TEXT_MODELS:
@@ -169,7 +172,7 @@ def call_groq_text(messages_payload):
                     model=model_name,
                     messages=current_messages,
                     temperature=0.7,
-                    max_tokens=1000,  # Límite seguro por cada bloque
+                    max_tokens=1000,
                 )
                 response = resp
                 break
@@ -186,13 +189,15 @@ def call_groq_text(messages_payload):
         content_chunk = choice.message.content or ""
         full_content += content_chunk
         
-        # Si se cortó por llegar al límite de tokens, pedimos continuación de forma silenciosa
         if getattr(choice, 'finish_reason', None) == 'length':
             current_messages.append({"role": "assistant", "content": content_chunk})
-            current_messages.append({"role": "user", "content": "Continúa exactamente desde donde te quedaste, sin repetir nada de lo anterior."})
+            current_messages.append({"role": "user", "content": "Continúa exactamente desde donde te quedaste, sin repetir nada."})
         else:
             break
             
+    if not full_content.strip():
+        return "Lo siento, no pude procesar la respuesta adecuadamente. Por favor, intenta formular tu pregunta de nuevo."
+        
     return full_content
 
 def call_groq_vision_extract(prompt_text, image_url):
@@ -212,10 +217,12 @@ def call_groq_vision_extract(prompt_text, image_url):
                 temperature=0.3,
                 max_tokens=250,
             )
-            return response.choices[0].message.content
+            content = response.choices[0].message.content
+            if content and content.strip():
+                return content
         except Exception as e:
             print(f"Advertencia visión: {str(e)}")
-    return "No se pudo extraer texto de la imagen."
+    return "Analiza y resuelve este ejercicio o problema técnico."
 
 # ---------------------------------------------------------
 # 3. Manejadores de Comandos
@@ -315,4 +322,3 @@ if __name__ == '__main__':
         except Exception as e:
             print(f"[Aviso Polling] {e}. Reintentando conexión en 5 segundos...")
             time.sleep(5)
-    
