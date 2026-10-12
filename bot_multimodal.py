@@ -72,31 +72,31 @@ VISION_MODELS = ["qwen/qwen3.8-27b"]
 chat_histories = {}
 
 SYSTEM_PROMPT = (
-    "Eres un tutor experto, cálido y sumamente ordenado. "
-    "Tu objetivo es explicar los ejercicios paso a paso de forma limpia, directa y muy fácil de leer en pantallas de celular.\n\n"
+    "Eres un tutor experto, cálido y sumamente ordenado en matemáticas, física, programación y todas las áreas de ingeniería y ciencias exactas. "
+    "Tu objetivo es explicar cualquier tipo de problema técnico o de cálculo (mecatrónica, circuitos, termodinámica, programación de PLC, cálculo, estática, química, etc.) "
+    "de forma limpia, directa y muy fácil de leer en pantallas de celular.\n\n"
     "ESTRUCTURA OBLIGATORIA DE RESPUESTA (SIN LÍNEAS SEPARADORAS ---):\n"
     "PROBLEMA\n"
-    "[Planteamiento claro o datos iniciales]\n\n"
+    "[Planteamiento claro, datos iniciales, variables o enunciado del problema de cualquier materia]\n\n"
     "PASOS A SEGUIR\n"
-    "1. Fórmula: ...\n"
-    "2. Sustitución: ...\n"
-    "3. Operaciones: ...\n\n"
+    "1. Leyes, Principios o Fórmulas aplicables: ...\n"
+    "2. Sustitución de valores y unidades: ...\n"
+    "3. Desarrollo analítico u operaciones: ...\n\n"
     "RESULTADO FINAL\n"
-    "[Resultado destacado]\n\n"
+    "[Resultado destacado con sus unidades correspondientes]\n\n"
     "RESUMEN RÁPIDO\n"
-    "- [Punto clave 1]\n"
-    "- [Punto clave 2]\n\n"
-    "REGLAS ESTRICTAS DE FORMATO Y ESTILO:\n"
-    "- PROHIBIDO ABSOLUTAMENTE usar LaTeX o comandos como \\lim, \\to, \\displaystyle, etc. Escribe todo en texto lineal normal.\n"
-    "- USO DE CORCHETES: Emplea corchetes reales [ ] cuando sea necesario en ejercicios matemáticos, como para representar matrices en renglones separados.\n"
+    "- [Punto clave o concepto físico/técnico 1]\n"
+    "- [Punto clave o concepto físico/técnico 2]\n\n"
+    "REGLAS ABSOLUTAS E INQUEBRANTABLES DE FORMATO Y ESTILO:\n"
+    "- PROHIBIDO ABSOLUTAMENTE usar LaTeX, símbolos de dólar ($), comandos como \\lim, \\to, \\displaystyle, \\frac, \\int, \\sum, \\begin, \\end, etc. Escribe todo estrictamente en texto lineal normal.\n"
+    "- NOTACIÓN TÉCNICA UNIVERSAL: Utiliza símbolos Unicode directos como lim, →, ∫, ∑, √, ∂, ±, ≈, ×, Ω, μ. Para fracciones utiliza barras simples (a/b) o caracteres estéticos (½, ⅓, ¼, ¾).\n"
+    "- AGRUPACIONES Y ARREGLOS: Si necesitas agrupar ecuaciones, representar vectores, tablas de verdad, estados lógicos o matrices, emplea corchetes reales [ ] en líneas separadas. Nunca uses entornos LaTeX.\n"
     "- PROHIBIDO usar líneas divisorias con guiones (---) ni hashtags (#).\n"
-    "- FRACCIONES ESTÉTICAS: Utiliza caracteres de fracción Unicode (ejemplo: ½, ⅓, ¼, ¾) o la barra diagonal simple (ejemplo: 1/2).\n"
-    "- Escribe las potencias de forma sencilla (ejemplo: x², t²) y las raíces usando el símbolo √ (ejemplo: √36).\n"
     "- Mantén un tono sumamente empático, didáctico y cercano."
 )
 
 def clean_latex_output(text):
-    """Filtro ultra-agresivo que destruye cualquier rastro de LaTeX en el primer intento."""
+    """Filtro ultra-agresivo que destruye cualquier rastro de LaTeX o símbolos prohibidos."""
     if not text:
         return ""
     
@@ -134,36 +134,37 @@ def clean_latex_output(text):
     return text
 
 def send_split_message(message, text):
+    """Divide automáticamente textos largos en varios mensajes consecutivos para Telegram de forma segura."""
     cleaned = clean_latex_output(text)
     if not cleaned or not cleaned.strip():
         cleaned = "Lo siento, ocurrió un problema al formatear la respuesta. Inténtalo de nuevo."
         
-    max_length = 3500
-    if len(cleaned) <= max_length:
+    max_length = 3000
+    chunks = [cleaned[i:i + max_length] for i in range(0, len(cleaned), max_length)]
+    
+    for index, chunk in enumerate(chunks):
         try:
-            bot.reply_to(message, cleaned, parse_mode="Markdown")
+            if index == 0:
+                bot.reply_to(message, chunk, parse_mode="Markdown")
+            else:
+                time.sleep(0.5)
+                bot.send_message(message.chat.id, chunk, parse_mode="Markdown")
         except Exception:
-            bot.reply_to(message, cleaned)
-    else:
-        chunks = [cleaned[i:i + max_length] for i in range(0, len(cleaned), max_length)]
-        for index, chunk in enumerate(chunks):
             try:
-                if index == 0:
-                    bot.reply_to(message, chunk + "\n\n*(Continuamos en el siguiente mensaje...)*", parse_mode="Markdown")
-                else:
-                    bot.send_message(message.chat.id, chunk, parse_mode="Markdown")
-            except Exception:
                 if index == 0:
                     bot.reply_to(message, chunk)
                 else:
+                    time.sleep(0.5)
                     bot.send_message(message.chat.id, chunk)
+            except Exception as e:
+                print(f"[Error enviando mensaje a Telegram]: {e}")
 
 def call_groq_text(messages_payload):
-    """Genera texto y continúa automáticamente hasta 3 veces si la respuesta llega al límite de tokens."""
+    """Genera texto con auto-continuación robusta, manejando 'length' / 'max_tokens' y evitando errores 413."""
     full_content = ""
     current_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + list(messages_payload)
     
-    for _ in range(3):
+    for _ in range(4):  # Hasta 4 bloques de auto-continuación transparente
         response = None
         last_exception = None
         for model_name in TEXT_MODELS:
@@ -189,10 +190,11 @@ def call_groq_text(messages_payload):
         content_chunk = choice.message.content or ""
         full_content += content_chunk
         
-        # Si se cortó por llegar al límite de tokens (finish_reason == 'length'), pedimos continuación
-        if getattr(choice, 'finish_reason', None) == 'length':
+        # Detector universal de cortes por límite de tokens ('length' o 'max_tokens')
+        finish_reason = getattr(choice, 'finish_reason', None)
+        if finish_reason in ['length', 'max_tokens']:
             current_messages.append({"role": "assistant", "content": content_chunk})
-            current_messages.append({"role": "user", "content": "Continúa exactamente desde donde te quedaste, sin repetir nada."})
+            current_messages.append({"role": "user", "content": "Continúa exactamente desde donde te quedaste, sin repetir nada y manteniendo el formato limpio sin LaTeX."})
         else:
             break
             
@@ -210,7 +212,7 @@ def call_groq_vision_extract(prompt_text, image_url):
                     {
                         "role": "user",
                         "content": [
-                            {"type": "text", "text": "Extrae detalladamente todo el texto, matrices, fórmulas o problemas matemáticos que aparecen en esta imagen."},
+                            {"type": "text", "text": "Extrae detalladamente todo el texto, matrices, fórmulas o problemas técnicos que aparecen en esta imagen."},
                             {"type": "image_url", "image_url": {"url": image_url}}
                         ]
                     }
@@ -231,8 +233,8 @@ def call_groq_vision_extract(prompt_text, image_url):
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     welcome_text = (
-        "¡Hola! 👋 Qué gusto saludarte. Soy tu asistente personal.\n\n"
-        "• 💬 **Texto y Matemáticas:** Resuelvo dudas de ingenierías, licenciaturas o cualquier tema.\n"
+        "¡Hola! 👋 Qué gusto saludarte. Soy tu asistente personal técnico.\n\n"
+        "• 💬 **Matemáticas e Ingeniería:** Resuelvo dudas de cualquier materia (cálculo, circuitos, programación, física, etc.).\n"
         "• 🖼️ **Imágenes:** Envíame fotos de ejercicios o esquemas para analizarlos a detalle.\n"
         "• 🔄 **Nuevo tema:** Usa `/reset` para limpiar el historial."
     )
@@ -242,7 +244,7 @@ def send_welcome(message):
 def reset_conversation(message):
     chat_id = message.chat.id
     chat_histories[chat_id] = []
-    bot.reply_to(message, "🔄 **Tema reiniciado.** ¿Qué cálculo o duda abordamos ahora?", parse_mode="Markdown")
+    bot.reply_to(message, "🔄 **Tema limpio.** ¿Qué cálculo o duda técnica abordamos ahora?", parse_mode="Markdown")
 
 # ---------------------------------------------------------
 # 4. Manejador de Fotos Recibidas (Arquitectura Híbrida)
@@ -261,13 +263,15 @@ def process_photo_async(message):
         if chat_id not in chat_histories:
             chat_histories[chat_id] = []
         
-        payload = chat_histories[chat_id] + [{"role": "user", "content": full_prompt}]
+        # Ventana de contexto optimizada (últimos 4 mensajes) para evitar errores 413 de TPM en Groq
+        recent_history = chat_histories[chat_id][-4:]
+        payload = recent_history + [{"role": "user", "content": full_prompt}]
         
         answer = call_groq_text(payload)
 
         chat_histories[chat_id].append({"role": "user", "content": f"[Foto enviada] {user_prompt}"})
         chat_histories[chat_id].append({"role": "assistant", "content": answer})
-        chat_histories[chat_id] = chat_histories[chat_id][-14:]
+        chat_histories[chat_id] = chat_histories[chat_id][-8:]
 
         send_split_message(message, answer)
 
@@ -292,13 +296,15 @@ def handle_text(message):
         chat_histories[chat_id] = []
 
     chat_histories[chat_id].append({"role": "user", "content": text})
-    chat_histories[chat_id] = chat_histories[chat_id][-14:]
+    chat_histories[chat_id] = chat_histories[chat_id][-8:]
+
+    recent_history = chat_histories[chat_id][-4:]
 
     try:
-        answer = call_groq_text(chat_histories[chat_id])
+        answer = call_groq_text(recent_history)
         
-        chat_histories[chat_id].append({"role": "assistant", "content": answer})
-        chat_histories[chat_id] = chat_histories[chat_id][-14:]
+        chat_histories[chat_id].append({"role": "user", "content": answer})
+        chat_histories[chat_id] = chat_histories[chat_id][-8:]
 
         send_split_message(message, answer)
 
@@ -323,4 +329,3 @@ if __name__ == '__main__':
         except Exception as e:
             print(f"[Aviso Polling] {e}. Reintentando conexión en 5 segundos...")
             time.sleep(5)
-        
