@@ -67,18 +67,21 @@ VISION_MODELS = ["qwen/qwen3.8-27b"]
 
 chat_histories = {}
 
-# SYSTEM PROMPT ADAPTATIVO Y UNIVERSAL
 SYSTEM_PROMPT = (
-    "Eres un tutor experto, cálido, directo y sumamente ordenado. "
-    "Tu objetivo es adaptarte de forma inteligente al contenido que el usuario te envíe (exámenes de opción múltiple, problemas matemáticos, ejercicios de inglés, código, diagramas o textos en general).\n\n"
-    "DIRECTRICES DE RESPUESTA:\n"
-    "- **Exámenes / Opción Múltiple:** Indica la respuesta correcta claramente de inmediato y justifica brevemente.\n"
-    "- **Problemas matemáticos o técnicos:** Muestra paso a paso fórmulas, sustitución y resultado con unidades.\n"
-    "- **Otros temas (inglés, teoría, esquemas):** Explica de forma concisa y muy fácil de leer en pantallas de celular.\n\n"
-    "REGLAS ABSOLUTAS DE FORMATO:\n"
-    "- PROHIBIDO LaTeX, símbolos de dólar ($), comandos como \\lim, \\frac, \\begin, etc. Usa texto lineal normal.\n"
-    "- Símbolos Unicode directos (lim, →, ∫, ∑, √, ±, ≈, ×). Usa corchetes [ ] para matrices o arreglos.\n"
-    "- PROHIBIDO usar líneas divisorias (---) o hashtags (#)."
+    "Eres un tutor experto, cálido, directo y sumamente ordenado en matemáticas, física, ingeniería y ciencias exactas. "
+    "Tu objetivo es resolver problemas, operaciones de matrices, cálculos o preguntas de examen de forma limpia y directa.\n\n"
+    "ESTRUCTURA OBLIGATORIA:\n"
+    "PROBLEMA\n"
+    "[Planteamiento claro de las matrices o datos iniciales]\n\n"
+    "PASOS A SEGUIR\n"
+    "1. Planteamiento de la operación: ...\n"
+    "2. Sustitución o desarrollo: ...\n\n"
+    "RESULTADO FINAL\n"
+    "[Resultado destacado]\n\n"
+    "REGLAS ABSOLUTAS DE FORMATO Y ESTILO:\n"
+    "- PROHIBIDO LaTeX, símbolos de dólar ($), comandos como \\frac, \\begin, \\end, etc. Escribe todo en texto lineal normal.\n"
+    "- MATRICES CON CORCHETES: Representa las matrices fila por fila usando corchetes reales [ ] en líneas separadas (ejemplo: [a, b, c]).\n"
+    "- Símbolos Unicode directos (→, √, ∑, ×, °). PROHIBIDO usar líneas divisorias (---) o hashtags (#)."
 )
 
 def clean_latex_output(text):
@@ -139,7 +142,7 @@ def call_groq_text(messages_payload):
                 resp = groq_client.chat.completions.create(
                     model=model_name,
                     messages=current_messages,
-                    temperature=0.5,
+                    temperature=0.4,
                     max_tokens=1000,
                 )
                 response = resp
@@ -166,52 +169,38 @@ def call_groq_text(messages_payload):
             
     return full_content if full_content.strip() else "No se pudo procesar la respuesta."
 
-# ANÁLISIS VISUAL MULTIPASOS: Extrae la imagen en 2 pasadas complementarias y las une
-def call_groq_vision_extract_multiphase(image_url):
-    combined_extraction = ""
-    
-    # Fase 1: Extracción general y lectura principal de textos/enunciados
-    prompts_phases = [
-        "Analiza la imagen y extrae el texto principal, enunciado, pregunta o contexto general que aparece en ella.",
-        "Analiza nuevamente la imagen con atención exhaustiva y extrae cualquier detalle secundario, opciones de respuesta, números, fórmulas, tablas o elementos gráficos que falten."
-    ]
-    
-    for i, phase_prompt in enumerate(prompts_phases):
-        for model_name in VISION_MODELS:
-            try:
-                response = groq_client.chat.completions.create(
-                    model=model_name,
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": [
-                                {"type": "text", "text": phase_prompt},
-                                {"type": "image_url", "image_url": {"url": image_url}}
-                            ]
-                        }
-                    ],
-                    temperature=0.2,
-                    max_tokens=250,
-                )
-                content = response.choices[0].message.content
-                if content and content.strip():
-                    combined_extraction += f"\n[Parte {i+1}]: {content.strip()}"
-                break
-            except Exception as e:
-                print(f"Advertencia visión fase {i+1}: {str(e)}")
-        time.sleep(0.3) # Pausa corta entre llamadas de visión para evitar saturar TPM/OTPM
-        
-    if not combined_extraction.strip():
-        return "No se pudo extraer información clara de la imagen."
-        
-    return combined_extraction
+# EXTRACCIÓN VISUAL OPTIMIZADA Y SEGURA CONTRA ERRORES 429
+def call_groq_vision_extract(image_url):
+    """Extrae con alta precisión matrices, fórmulas y textos sin saturar los límites de la API."""
+    for model_name in VISION_MODELS:
+        try:
+            response = groq_client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "Analiza detalladamente esta imagen. Transcribe con absoluta precisión todas las matrices (escribiendo sus filas y columnas con corchetes), variables, números, funciones trigonométricas y operaciones matemáticas que aparezcan."},
+                            {"type": "image_url", "image_url": {"url": image_url}}
+                        ]
+                    }
+                ],
+                temperature=0.1,
+                max_tokens=350,
+            )
+            content = response.choices[0].message.content
+            if content and content.strip():
+                return content
+        except Exception as e:
+            print(f"Advertencia visión: {str(e)}")
+    return "No se pudo leer la imagen."
 
 # ---------------------------------------------------------
 # 3. Manejadores de Comandos
 # ---------------------------------------------------------
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
-    bot.reply_to(message, "¡Hola! Envíame cualquier imagen compleja (exámenes, ejercicios, inglés, diagramas) y haré un análisis profundo en múltiples pasadas para darte la mejor respuesta.", parse_mode="Markdown")
+    bot.reply_to(message, "¡Hola! Envíame tus fotos de matrices, ejercicios o exámenes y te daré la solución paso a paso.", parse_mode="Markdown")
 
 @bot.message_handler(commands=['reset', 'nuevotema'])
 def reset_conversation(message):
@@ -220,7 +209,7 @@ def reset_conversation(message):
     bot.reply_to(message, "🔄 Historial limpio.", parse_mode="Markdown")
 
 # ---------------------------------------------------------
-# 4. Manejador de Fotos con Pipeline Multipasos
+# 4. Manejador de Fotos Seguro
 # ---------------------------------------------------------
 def process_photo_async(message):
     chat_id = message.chat.id
@@ -228,12 +217,12 @@ def process_photo_async(message):
         bot.send_chat_action(chat_id, 'typing')
         file_info = bot.get_file(message.photo[-1].file_id)
         file_url = f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_info.file_path}"
-        user_prompt = message.caption if message.caption else "Analiza y resuelve detalladamente lo que aparece en esta imagen."
+        user_prompt = message.caption if message.caption else "Resuelve este ejercicio."
 
-        # Ejecutamos el análisis visual de múltiples pasadas
-        extracted_text = call_groq_vision_extract_multiphase(file_url)
+        # Llamada única de visión optimizada para prevenir saturaciones (429)
+        extracted_text = call_groq_vision_extract(file_url)
         
-        full_prompt = f"Contenido consolidado del análisis de la imagen:\n{extracted_text}\n\nInstrucción del usuario: {user_prompt}"
+        full_prompt = f"Contenido extraído de la imagen:\n{extracted_text}\n\nInstrucción del usuario: {user_prompt}"
         
         if chat_id not in chat_histories:
             chat_histories[chat_id] = []
