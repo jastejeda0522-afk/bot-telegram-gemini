@@ -66,7 +66,7 @@ bot = telebot.TeleBot(TELEGRAM_TOKEN)
 groq_client = Groq(api_key=GROQ_API_KEY)
 
 # Modelos oficiales de Groq
-TEXT_MODELS = ["openai/gpt-oss-20b", "openai/gpt-oss-120b"]
+TEXT_MODELS = ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]
 VISION_MODELS = ["qwen/qwen3.8-27b"]
 
 chat_histories = {}
@@ -156,53 +156,43 @@ def send_split_message(message, text):
                     bot.send_message(message.chat.id, chunk)
 
 def call_groq_text(messages_payload):
-    for attempt in range(3):
-        for model_name in TEXT_MODELS:
-            try:
-                response = groq_client.chat.completions.create(
-                    model=model_name,
-                    messages=messages_payload,
-                    temperature=0.7,
-                    max_tokens=2000,
-                )
-                return response.choices[0].message.content
-            except Exception as e:
-                err_str = str(e)
-                print(f"Advertencia texto: {err_str}")
-                if "429" in err_str or "rate_limit" in err_str.lower():
-                    time.sleep(5)
-        time.sleep(2)
-    raise Exception("Límite de tasa excedido en texto. Intenta de nuevo en unos segundos.")
+    last_exception = None
+    for model_name in TEXT_MODELS:
+        try:
+            response = groq_client.chat.completions.create(
+                model=model_name,
+                messages=messages_payload,
+                temperature=0.7,
+                max_tokens=3000,
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            last_exception = e
+            print(f"Advertencia texto: {str(e)}")
+    raise last_exception
 
-def call_groq_vision(prompt_text, image_url):
-    """Llamada a visión con manejo automático de errores 429 y espera inteligente."""
-    for attempt in range(3):
-        for model_name in VISION_MODELS:
-            try:
-                response = groq_client.chat.completions.create(
-                    model=model_name,
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": [
-                                {"type": "text", "text": f"{SYSTEM_PROMPT}\n\n{prompt_text}"},
-                                {"type": "image_url", "image_url": {"url": image_url}}
-                            ]
-                        }
-                    ],
-                    temperature=0.7,
-                    max_tokens=450,  # Tokenaje ultra-seguro para no superar nunca el límite de 1000 OTPM de Groq
-                )
-                return response.choices[0].message.content
-            except Exception as e:
-                err_str = str(e)
-                print(f"Advertencia visión: {err_str}")
-                if "429" in err_str or "rate_limit" in err_str.lower():
-                    # Espera 12 segundos automáticos para que se limpie la cuota del minuto en Groq
-                    print("Límite OTPM de visión alcanzado. Esperando 12 segundos para reintentar...")
-                    time.sleep(12)
-        time.sleep(3)
-    raise Exception("El modelo de visión está saturado por el límite gratuito de Groq. Por favor espera 20 segundos y vuelve a enviar la imagen.")
+def call_groq_vision_extract(prompt_text, image_url):
+    """Extrae solo el contenido técnico de la imagen de forma muy corta para no superar el límite de visión."""
+    for model_name in VISION_MODELS:
+        try:
+            response = groq_client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "Extrae detalladamente todo el texto, matrices, fórmulas o problemas matemáticos que aparecen en esta imagen para que puedan ser resueltos."},
+                            {"type": "image_url", "image_url": {"url": image_url}}
+                        ]
+                    }
+                ],
+                temperature=0.3,
+                max_tokens=250,  # Extremadamente bajo para gastar muy pocos tokens y evitar el error 429
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            print(f"Advertencia visión: {str(e)}")
+    return "No se pudo extraer texto de la imagen."
 
 # ---------------------------------------------------------
 # 3. Manejadores de Comandos
@@ -224,7 +214,7 @@ def reset_conversation(message):
     bot.reply_to(message, "🔄 **Tema reiniciado.** ¿Qué cálculo o duda abordamos ahora?", parse_mode="Markdown")
 
 # ---------------------------------------------------------
-# 4. Manejador de Fotos Recibidas (Visión Asíncrona)
+# 4. Manejador de Fotos Recibidas (Arquitectura Híbrida)
 # ---------------------------------------------------------
 def process_photo_async(message):
     chat_id = message.chat.id
@@ -232,12 +222,21 @@ def process_photo_async(message):
         bot.send_chat_action(chat_id, 'typing')
         file_info = bot.get_file(message.photo[-1].file_id)
         file_url = f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_info.file_path}"
-        user_prompt = message.caption if message.caption else "Analiza esta imagen paso a paso y resuelve cualquier ejercicio o problema técnico que contenga."
+        user_prompt = message.caption if message.caption else "Resuelve paso a paso este ejercicio."
 
-        answer = call_groq_vision(user_prompt, file_url)
+        # Paso 1: Extracción ligera con el modelo de visión (gasta pocos tokens)
+        extracted_text = call_groq_vision_extract(user_prompt, file_url)
 
+        # Paso 2: Generación completa y robusta con el modelo de texto (sin límites estrictos de visión)
+        full_prompt = f"El usuario envió una imagen con el siguiente contenido extraído:\n{extracted_text}\n\nInstrucción adicional del usuario: {user_prompt}"
+        
         if chat_id not in chat_histories:
             chat_histories[chat_id] = []
+        
+        payload = [{"role": "system", "content": SYSTEM_PROMPT}] + chat_histories[chat_id] + [{"role": "user", "content": full_prompt}]
+        
+        answer = call_groq_text(payload)
+
         chat_histories[chat_id].append({"role": "user", "content": f"[Foto enviada] {user_prompt}"})
         chat_histories[chat_id].append({"role": "assistant", "content": answer})
         chat_histories[chat_id] = chat_histories[chat_id][-14:]
@@ -298,3 +297,4 @@ if __name__ == '__main__':
         except Exception as e:
             print(f"[Aviso Polling] {e}. Reintentando conexión en 5 segundos...")
             time.sleep(5)
+    
