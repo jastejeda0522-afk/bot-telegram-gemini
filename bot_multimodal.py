@@ -90,8 +90,8 @@ SYSTEM_PROMPT = (
     "- PROHIBIDO ABSOLUTAMENTE usar LaTeX o comandos como \\lim, \\to, \\displaystyle, etc. Escribe todo en texto lineal normal.\n"
     "- USO DE CORCHETES: Emplea corchetes reales [ ] cuando sea necesario en ejercicios matemáticos, como para representar matrices en renglones separados.\n"
     "- PROHIBIDO usar líneas divisorias con guiones (---) ni hashtags (#).\n"
-    "- SÍNTESIS EFICIENTE: Sé directo y fluido para que la respuesta quepa completa y sin cortes dentro de los límites de la IA.\n"
-    "- FRACCIONES Y SÍMBOLOS: Utiliza caracteres de fracción Unicode (½, ⅓, ¼, ¾) o barras simples, potencias sencillas (x²) y raíces con √.\n"
+    "- FRACCIONES ESTÉTICAS: Utiliza caracteres de fracción Unicode (ejemplo: ½, ⅓, ¼, ¾) o la barra diagonal simple (ejemplo: 1/2).\n"
+    "- Escribe las potencias de forma sencilla (ejemplo: x², t²) y las raíces usando el símbolo √ (ejemplo: √36).\n"
     "- Mantén un tono sumamente empático, didáctico y cercano."
 )
 
@@ -156,44 +156,53 @@ def send_split_message(message, text):
                     bot.send_message(message.chat.id, chunk)
 
 def call_groq_text(messages_payload):
-    last_exception = None
-    for model_name in TEXT_MODELS:
-        try:
-            response = groq_client.chat.completions.create(
-                model=model_name,
-                messages=messages_payload,
-                temperature=0.7,
-                max_tokens=2000,
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            last_exception = e
-            print(f"Advertencia: Modelo {model_name} falló: {str(e)}")
-    raise last_exception
+    for attempt in range(3):
+        for model_name in TEXT_MODELS:
+            try:
+                response = groq_client.chat.completions.create(
+                    model=model_name,
+                    messages=messages_payload,
+                    temperature=0.7,
+                    max_tokens=2000,
+                )
+                return response.choices[0].message.content
+            except Exception as e:
+                err_str = str(e)
+                print(f"Advertencia texto: {err_str}")
+                if "429" in err_str or "rate_limit" in err_str.lower():
+                    time.sleep(5)
+        time.sleep(2)
+    raise Exception("Límite de tasa excedido en texto. Intenta de nuevo en unos segundos.")
 
 def call_groq_vision(prompt_text, image_url):
-    last_exception = None
-    for model_name in VISION_MODELS:
-        try:
-            response = groq_client.chat.completions.create(
-                model=model_name,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": f"{SYSTEM_PROMPT}\n\n{prompt_text}"},
-                            {"type": "image_url", "image_url": {"url": image_url}}
-                        ]
-                    }
-                ],
-                temperature=0.7,
-                max_tokens=700,  # Valor seguro y estable para evitar bloqueos por límites de Groq
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            last_exception = e
-            print(f"Advertencia: Modelo de visión {model_name} falló: {str(e)}")
-    raise last_exception
+    """Llamada a visión con manejo automático de errores 429 y espera inteligente."""
+    for attempt in range(3):
+        for model_name in VISION_MODELS:
+            try:
+                response = groq_client.chat.completions.create(
+                    model=model_name,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": f"{SYSTEM_PROMPT}\n\n{prompt_text}"},
+                                {"type": "image_url", "image_url": {"url": image_url}}
+                            ]
+                        }
+                    ],
+                    temperature=0.7,
+                    max_tokens=450,  # Tokenaje ultra-seguro para no superar nunca el límite de 1000 OTPM de Groq
+                )
+                return response.choices[0].message.content
+            except Exception as e:
+                err_str = str(e)
+                print(f"Advertencia visión: {err_str}")
+                if "429" in err_str or "rate_limit" in err_str.lower():
+                    # Espera 12 segundos automáticos para que se limpie la cuota del minuto en Groq
+                    print("Límite OTPM de visión alcanzado. Esperando 12 segundos para reintentar...")
+                    time.sleep(12)
+        time.sleep(3)
+    raise Exception("El modelo de visión está saturado por el límite gratuito de Groq. Por favor espera 20 segundos y vuelve a enviar la imagen.")
 
 # ---------------------------------------------------------
 # 3. Manejadores de Comandos
@@ -289,4 +298,3 @@ if __name__ == '__main__':
         except Exception as e:
             print(f"[Aviso Polling] {e}. Reintentando conexión en 5 segundos...")
             time.sleep(5)
-        
