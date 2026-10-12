@@ -134,7 +134,6 @@ def clean_latex_output(text):
     return text
 
 def send_split_message(message, text):
-    """Envía el mensaje asegurando que nunca esté vacío para evitar errores 400 de Telegram."""
     cleaned = clean_latex_output(text)
     if not cleaned or not cleaned.strip():
         cleaned = "Lo siento, ocurrió un problema al formatear la respuesta. Inténtalo de nuevo."
@@ -160,6 +159,7 @@ def send_split_message(message, text):
                     bot.send_message(message.chat.id, chunk)
 
 def call_groq_text(messages_payload):
+    """Genera texto y continúa automáticamente hasta 3 veces si la respuesta llega al límite de tokens."""
     full_content = ""
     current_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + list(messages_payload)
     
@@ -189,6 +189,7 @@ def call_groq_text(messages_payload):
         content_chunk = choice.message.content or ""
         full_content += content_chunk
         
+        # Si se cortó por llegar al límite de tokens (finish_reason == 'length'), pedimos continuación
         if getattr(choice, 'finish_reason', None) == 'length':
             current_messages.append({"role": "assistant", "content": content_chunk})
             current_messages.append({"role": "user", "content": "Continúa exactamente desde donde te quedaste, sin repetir nada."})
@@ -322,3 +323,4 @@ if __name__ == '__main__':
         except Exception as e:
             print(f"[Aviso Polling] {e}. Reintentando conexión en 5 segundos...")
             time.sleep(5)
+        
