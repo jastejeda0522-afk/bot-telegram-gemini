@@ -156,23 +156,46 @@ def send_split_message(message, text):
                     bot.send_message(message.chat.id, chunk)
 
 def call_groq_text(messages_payload):
-    last_exception = None
-    for model_name in TEXT_MODELS:
-        try:
-            response = groq_client.chat.completions.create(
-                model=model_name,
-                messages=messages_payload,
-                temperature=0.7,
-                max_tokens=3000,
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            last_exception = e
-            print(f"Advertencia texto: {str(e)}")
-    raise last_exception
+    """Genera texto y continúa automáticamente de forma interna si la respuesta excede el límite de tokens."""
+    full_content = ""
+    current_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + list(messages_payload)
+    
+    for _ in range(3):  # Permite hasta 3 fragmentos de continuación automática
+        response = None
+        last_exception = None
+        for model_name in TEXT_MODELS:
+            try:
+                resp = groq_client.chat.completions.create(
+                    model=model_name,
+                    messages=current_messages,
+                    temperature=0.7,
+                    max_tokens=1000,  # Límite seguro por cada bloque
+                )
+                response = resp
+                break
+            except Exception as e:
+                last_exception = e
+                print(f"Advertencia texto: {str(e)}")
+        
+        if not response:
+            if full_content:
+                return full_content
+            raise last_exception
+            
+        choice = response.choices[0]
+        content_chunk = choice.message.content or ""
+        full_content += content_chunk
+        
+        # Si se cortó por llegar al límite de tokens, pedimos continuación de forma silenciosa
+        if getattr(choice, 'finish_reason', None) == 'length':
+            current_messages.append({"role": "assistant", "content": content_chunk})
+            current_messages.append({"role": "user", "content": "Continúa exactamente desde donde te quedaste, sin repetir nada de lo anterior."})
+        else:
+            break
+            
+    return full_content
 
 def call_groq_vision_extract(prompt_text, image_url):
-    """Extrae solo el contenido técnico de la imagen de forma muy corta para no superar el límite de visión."""
     for model_name in VISION_MODELS:
         try:
             response = groq_client.chat.completions.create(
@@ -181,13 +204,13 @@ def call_groq_vision_extract(prompt_text, image_url):
                     {
                         "role": "user",
                         "content": [
-                            {"type": "text", "text": "Extrae detalladamente todo el texto, matrices, fórmulas o problemas matemáticos que aparecen en esta imagen para que puedan ser resueltos."},
+                            {"type": "text", "text": "Extrae detalladamente todo el texto, matrices, fórmulas o problemas matemáticos que aparecen en esta imagen."},
                             {"type": "image_url", "image_url": {"url": image_url}}
                         ]
                     }
                 ],
                 temperature=0.3,
-                max_tokens=250,  # Extremadamente bajo para gastar muy pocos tokens y evitar el error 429
+                max_tokens=250,
             )
             return response.choices[0].message.content
         except Exception as e:
@@ -224,16 +247,13 @@ def process_photo_async(message):
         file_url = f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_info.file_path}"
         user_prompt = message.caption if message.caption else "Resuelve paso a paso este ejercicio."
 
-        # Paso 1: Extracción ligera con el modelo de visión (gasta pocos tokens)
         extracted_text = call_groq_vision_extract(user_prompt, file_url)
-
-        # Paso 2: Generación completa y robusta con el modelo de texto (sin límites estrictos de visión)
         full_prompt = f"El usuario envió una imagen con el siguiente contenido extraído:\n{extracted_text}\n\nInstrucción adicional del usuario: {user_prompt}"
         
         if chat_id not in chat_histories:
             chat_histories[chat_id] = []
         
-        payload = [{"role": "system", "content": SYSTEM_PROMPT}] + chat_histories[chat_id] + [{"role": "user", "content": full_prompt}]
+        payload = chat_histories[chat_id] + [{"role": "user", "content": full_prompt}]
         
         answer = call_groq_text(payload)
 
@@ -266,10 +286,8 @@ def handle_text(message):
     chat_histories[chat_id].append({"role": "user", "content": text})
     chat_histories[chat_id] = chat_histories[chat_id][-14:]
 
-    payload = [{"role": "system", "content": SYSTEM_PROMPT}] + chat_histories[chat_id]
-
     try:
-        answer = call_groq_text(payload)
+        answer = call_groq_text(chat_histories[chat_id])
         
         chat_histories[chat_id].append({"role": "assistant", "content": answer})
         chat_histories[chat_id] = chat_histories[chat_id][-14:]
